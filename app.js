@@ -635,6 +635,16 @@ function renderSettings() {
   }).join('');
   view.innerHTML = `
     <div class="card">
+      <div class="chart-title">安装成 App</div>
+      ${isStandalone
+        ? '<div class="set-help">✓ 当前已作为 App 运行（桌面图标打开）</div>'
+        : `<div class="set-help">
+             <b>安卓（Chrome / Edge）</b>：点页面顶部的「安装」按钮；或右上角 ⋮ 菜单 → 「安装应用 / 添加到主屏幕」。<br>
+             <b>iPhone（Safari）</b>：底部分享按钮 → 「添加到主屏幕」。<br>
+             请在系统浏览器里打开本页面，微信内置浏览器无法安装。
+           </div>`}
+    </div>
+    <div class="card">
       <div class="chart-title">账本管理</div>
       ${ledgerRows}
     </div>
@@ -711,6 +721,40 @@ document.querySelectorAll('.tab').forEach((t) => {
 window.addEventListener('resize', () => { if (state.tab === 'stats') renderStats(); });
 window.addEventListener('online', () => { if (settings.token) doSync('auto'); });
 
+/* ---------------- 安装成 App ---------------- */
+let deferredPrompt = null;
+const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+  || window.navigator.standalone === true;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBanner();
+});
+window.addEventListener('appinstalled', () => {
+  const b = $('#install-banner');
+  if (b) b.hidden = true;
+});
+function showInstallBanner() {
+  const b = $('#install-banner');
+  if (!b || isStandalone || !deferredPrompt) return;
+  if (localStorage.getItem('jizhang-install-dismissed') === '1') return;
+  b.hidden = false;
+  b.querySelector('#ib-install').onclick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try {
+      const r = await deferredPrompt.userChoice;
+      if (r.outcome === 'accepted') b.hidden = true;
+    } catch (e) { /* ignore */ }
+    deferredPrompt = null;
+  };
+  b.querySelector('#ib-dismiss').onclick = () => {
+    b.hidden = true;
+    localStorage.setItem('jizhang-install-dismissed', '1');
+  };
+}
+
 /* ---------------- 启动 ---------------- */
 try {
   settings = loadSettings();
@@ -735,6 +779,7 @@ try {
   const h = location.hash.replace('#', '');
   if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
   reload();
+  showInstallBanner();
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
