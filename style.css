@@ -105,6 +105,13 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   padding: 7px 18px; border-radius: 9px; cursor: pointer; font-weight: 600; flex: none;
 }
 .ib-x { border: none; background: none; color: var(--faint); font-size: 14px; cursor: pointer; padding: 4px; flex: none; }
+.ib-help {
+  display: none; flex-basis: 100%; font-size: 12px; color: var(--sub);
+  line-height: 1.8; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 2px;
+}
+.install-banner { flex-wrap: wrap; }
+.install-banner .ib-help[hidden] { display: none; }
+.install-banner .ib-help:not([hidden]) { display: block; }
 
 /* ---------- 账本切换 ---------- */
 .ledger-row {

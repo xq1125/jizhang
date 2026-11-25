@@ -710,9 +710,10 @@ function renderSettings() {
       ${isStandalone
         ? '<div class="set-help">✓ 当前已作为 App 运行（桌面图标打开）</div>'
         : `<div class="set-help">
-             <b>安卓（Chrome / Edge）</b>：点页面顶部的「安装」按钮；或右上角 ⋮ 菜单 → 「安装应用 / 添加到主屏幕」。<br>
+             <b>Chrome / Edge（安卓）</b>：点页面顶部的「安装」按钮；或菜单 ⋮ → 「安装应用」。<br>
+             <b>QQ浏览器 / UC / 自带浏览器</b>：不支持一键安装，请用菜单 → 「添加至桌面」；想要真正的 App 体验建议装 Edge 或 Chrome。<br>
              <b>iPhone（Safari）</b>：底部分享按钮 → 「添加到主屏幕」。<br>
-             请在系统浏览器里打开本页面，微信内置浏览器无法安装。
+             微信里点开的链接请先选「在浏览器打开」。
            </div>`}
     </div>
     <div class="card">
@@ -805,6 +806,7 @@ window.addEventListener('online', () => { if (settings.token) doSync('auto'); })
 let deferredPrompt = null;
 const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
   || window.navigator.standalone === true;
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -817,17 +819,21 @@ window.addEventListener('appinstalled', () => {
 });
 function showInstallBanner() {
   const b = $('#install-banner');
-  if (!b || isStandalone || !deferredPrompt) return;
+  if (!b || isStandalone) return;
   if (localStorage.getItem('jizhang-install-dismissed') === '1') return;
+  if (!deferredPrompt && !isMobile) return;
   b.hidden = false;
   b.querySelector('#ib-install').onclick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    try {
-      const r = await deferredPrompt.userChoice;
-      if (r.outcome === 'accepted') b.hidden = true;
-    } catch (e) { /* ignore */ }
-    deferredPrompt = null;
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      try {
+        const r = await deferredPrompt.userChoice;
+        if (r.outcome === 'accepted') { b.hidden = true; return; }
+      } catch (e) { /* ignore */ }
+      deferredPrompt = null;
+    }
+    const help = b.querySelector('#ib-help');
+    if (help) help.hidden = false;
   };
   b.querySelector('#ib-dismiss').onclick = () => {
     b.hidden = true;
