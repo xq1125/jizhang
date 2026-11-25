@@ -3,8 +3,8 @@
 
 const $ = (s) => document.querySelector(s);
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-const PALETTE = ['#4f6ef7', '#e5533c', '#f2a93b', '#1aad6e', '#9b59d0', '#2bb3c0',
-  '#ef7fa9', '#8fa2b3', '#c0ca33', '#7e57c2', '#ff8a50', '#5c6bc0'];
+const PALETTE = ['#3e63dd', '#e5484d', '#f76b15', '#46a758', '#8e4ec6', '#12a594',
+  '#d6409f', '#946800', '#5b7083', '#0090ff', '#6e56cf', '#e18d07'];
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 function todayStr() {
@@ -95,10 +95,10 @@ const SEED_CATEGORIES = [
 const state = {
   month: thisMonth(),
   tab: 'add',
-  allRecords: [],   // 含删除标记（同步用）
+  allRecords: [],
   allCategories: [],
-  records: [],      // 当月可见
-  categories: [],   // 活跃分类
+  records: [],
+  categories: [],
   stats: null,
   form: { type: 'expense', categoryId: null, amount: '', note: '', date: todayStr(), editingId: null },
 };
@@ -186,26 +186,30 @@ async function doSync(kind) {
 function updateSyncChip() {
   const chip = $('#sync-chip');
   if (!chip) return;
-  let cls = 'off', title = '未配置同步（数据只存在本机）';
-  if (syncing) { cls = 'busy'; title = '正在同步…'; }
+  let cls = 'off', text = '未配置';
+  if (syncing) { cls = 'busy'; text = '同步中'; }
   else if (settings.token) {
-    if (settings.lastError) { cls = 'err'; title = '上次同步失败：' + settings.lastError; }
-    else if (settings.lastSync) {
-      cls = 'ok';
-      title = '已同步 ' + new Date(settings.lastSync).toLocaleString('zh-CN');
-    } else { cls = 'warn'; title = '已配置 Token，等待首次同步'; }
+    if (settings.lastError) { cls = 'err'; text = '同步失败'; }
+    else if (settings.lastSync) { cls = 'ok'; text = '已同步'; }
+    else { cls = 'warn'; text = '待同步'; }
   }
   chip.className = 'sync-chip ' + cls;
-  chip.title = title;
+  chip.querySelector('b').textContent = text;
+  chip.title = settings.token
+    ? (settings.lastError ? '上次同步失败：' + settings.lastError
+       : settings.lastSync ? '已同步 ' + new Date(settings.lastSync).toLocaleString('zh-CN') : '等待首次同步')
+    : '未配置同步（数据只存在本机）';
 }
 
-/* ---------------- 顶栏 ---------------- */
+/* ---------------- 顶栏 + 结余卡 ---------------- */
 function renderHeader() {
   $('#month-label').textContent = monthLabel(state.month);
   const s = state.stats;
   $('#sum-expense').textContent = '¥' + fmt(s.expense);
   $('#sum-income').textContent = '¥' + fmt(s.income);
-  $('#sum-net').textContent = (s.net < 0 ? '-¥' : '¥') + fmt(Math.abs(s.net));
+  const net = $('#sum-net');
+  net.textContent = (s.net < 0 ? '-¥' : '¥') + fmt(Math.abs(s.net));
+  net.classList.toggle('neg', s.net < 0);
   updateSyncChip();
 }
 
@@ -217,33 +221,35 @@ function renderAdd() {
   const view = $('#view');
   view.innerHTML = `
     <div class="card">
-      <div class="type-switch">
-        <button data-type="expense" class="${f.type === 'expense' ? 'on-expense' : ''}">支出</button>
-        <button data-type="income" class="${f.type === 'income' ? 'on-income' : ''}">收入</button>
+      <div class="seg">
+        <button data-type="expense" class="${f.type === 'expense' ? 'on' : ''}">支出</button>
+        <button data-type="income" class="${f.type === 'income' ? 'on' : ''}">收入</button>
       </div>
-      <div class="amount-box">
+      <div class="amount-row">
         <span class="yen">¥</span>
         <input id="amount" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${esc(f.amount)}">
       </div>
-      <div class="cat-grid" id="cat-grid">
+      <div class="cat-grid">
         ${cats.map((c) => `
-          <div class="cat ${c.id === f.categoryId ? 'sel' : ''}" data-cat="${esc(c.id)}">
-            <span class="ico">${esc(c.icon)}</span><span>${esc(c.name)}</span>
-          </div>`).join('')}
-        <div class="cat add-cat" data-addcat="1"><span class="ico">＋</span><span>新分类</span></div>
+          <button class="cat ${c.id === f.categoryId ? 'sel' : ''}" data-cat="${esc(c.id)}">
+            <span class="cico">${esc(c.icon)}</span><span class="cname">${esc(c.name)}</span>
+          </button>`).join('')}
+        <button class="cat add-cat" data-addcat="1">
+          <span class="cico">＋</span><span class="cname">新分类</span>
+        </button>
       </div>
-      <div class="field"><label>日期</label><input type="date" id="f-date" value="${esc(f.date)}"></div>
-      <div class="field"><label>备注</label><input id="f-note" maxlength="60" placeholder="选填" value="${esc(f.note)}"></div>
+      <div class="frow"><span class="fk">日期</span><input type="date" id="f-date" value="${esc(f.date)}"></div>
+      <div class="frow"><span class="fk">备注</span><input id="f-note" maxlength="60" placeholder="选填" value="${esc(f.note)}"></div>
       ${editing ? `
         <div class="edit-actions">
           <button class="btn-ghost btn-danger" id="btn-del">删除</button>
           <button class="btn-ghost" id="btn-cancel">取消</button>
-          <button class="save-btn" id="btn-save">更新</button>
+          <button class="btn-primary" id="btn-save">更新</button>
         </div>` : `
-        <button class="save-btn" id="btn-save">保存</button>`}
+        <button class="btn-primary" id="btn-save">保存</button>`}
     </div>`;
 
-  view.querySelectorAll('.type-switch button').forEach((b) => {
+  view.querySelectorAll('.seg button').forEach((b) => {
     b.onclick = () => { f.type = b.dataset.type; f.categoryId = null; render(); };
   });
   view.querySelectorAll('.cat[data-cat]').forEach((el) => {
@@ -343,7 +349,7 @@ function renderList() {
     if (!groups.has(r.date)) groups.set(r.date, []);
     groups.get(r.date).push(r);
   }
-  let html = '';
+  let html = '<div class="card list-card">';
   for (const [date, list] of groups) {
     let exp = 0, inc = 0;
     for (const r of list) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
@@ -351,17 +357,18 @@ function renderList() {
       <div class="day-head"><span>${dayLabel(date)}</span>
         <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
     for (const r of list) {
-      html += `<div class="rec" data-id="${esc(r.id)}">
-        <div class="ico">${esc(r.catIcon)}</div>
-        <div class="mid"><div class="name">${esc(r.catName)}</div>
-          <div class="note">${esc(r.note) || '无备注'}</div></div>
-        <div class="amt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</div>
+      html += `<div class="rrow" data-id="${esc(r.id)}">
+        <span class="rico">${esc(r.catIcon)}</span>
+        <span class="rmid"><div class="rname">${esc(r.catName)}</div>
+          ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
+        <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
       </div>`;
     }
     html += '</div>';
   }
+  html += '</div>';
   view.innerHTML = html;
-  view.querySelectorAll('.rec').forEach((el) => {
+  view.querySelectorAll('.rrow').forEach((el) => {
     el.onclick = () => {
       const r = state.records.find((x) => x.id === el.dataset.id);
       if (!r) return;
@@ -388,10 +395,10 @@ function setupCanvas(canvas, w, h) {
 }
 
 function drawPie(ctx, slices, total) {
-  const cx = 75, cy = 75, R = 62, r = 36;
+  const cx = 70, cy = 70, R = 58, r = 34;
   let a = -Math.PI / 2;
   if (!slices.length) {
-    ctx.fillStyle = '#e8eaf2';
+    ctx.fillStyle = '#f2f2ef';
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.arc(cx, cy, r, 0, Math.PI * 2, true); ctx.fill();
   }
   for (const s of slices) {
@@ -407,41 +414,54 @@ function drawPie(ctx, slices, total) {
   ctx.globalCompositeOperation = 'destination-out';
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = '#22263a';
+  ctx.fillStyle = '#1b1d21';
   ctx.textAlign = 'center';
-  ctx.font = '600 11px sans-serif';
-  ctx.fillText('支出', cx, cy - 8);
-  ctx.font = '700 13px sans-serif';
-  ctx.fillText('¥' + fmt(total), cx, cy + 10);
+  ctx.font = '500 10px sans-serif';
+  ctx.fillText('支出', cx, cy - 9);
+  ctx.font = '700 12px sans-serif';
+  ctx.fillText('¥' + fmt(total), cx, cy + 8);
 }
 
 function drawBars(ctx, days, expByDay, incByDay, W, H) {
-  const padL = 6, padR = 6, padT = 10, padB = 20;
+  const padL = 6, padR = 6, padT = 12, padB = 20;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   let max = 0;
   for (let d = 1; d <= days; d++) max = Math.max(max, expByDay[d] || 0, incByDay[d] || 0);
   if (max <= 0) max = 1;
-  ctx.strokeStyle = '#e8eaf2';
+  ctx.strokeStyle = '#f0efec';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 2; i++) {
     const y = padT + (plotH * i) / 2;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
   }
   const slot = plotW / days;
-  const bw = Math.max(2, Math.min(7, slot * 0.32));
+  const bw = Math.max(2, Math.min(6, slot * 0.3));
+  const round = (x, y, w, h, rad) => {
+    if (h <= 0) return;
+    rad = Math.min(rad, w / 2, h);
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y + rad);
+    ctx.arcTo(x, y, x + rad, y, rad);
+    ctx.lineTo(x + w - rad, y);
+    ctx.arcTo(x + w, y, x + w, y + rad, rad);
+    ctx.lineTo(x + w, y + h);
+    ctx.closePath();
+    ctx.fill();
+  };
   ctx.font = '9px sans-serif';
   ctx.textAlign = 'center';
   for (let d = 1; d <= days; d++) {
     const x = padL + slot * (d - 0.5);
     const eh = ((expByDay[d] || 0) / max) * plotH;
     const ih = ((incByDay[d] || 0) / max) * plotH;
-    if (eh > 0) { ctx.fillStyle = '#e5533c'; ctx.fillRect(x - bw - 0.5, padT + plotH - eh, bw, eh); }
-    if (ih > 0) { ctx.fillStyle = '#1aad6e'; ctx.fillRect(x + 0.5, padT + plotH - ih, bw, ih); }
-    ctx.fillStyle = '#8a90a6';
+    if (eh > 0) { ctx.fillStyle = '#e5484d'; round(x - bw - 1, padT + plotH - eh, bw, eh, 2); }
+    if (ih > 0) { ctx.fillStyle = '#30a46c'; round(x + 1, padT + plotH - ih, bw, ih, 2); }
+    ctx.fillStyle = '#b9bdc5';
     if (d === 1 || d % 5 === 0 || d === days) ctx.fillText(String(d), x, H - 6);
   }
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#8a90a6';
+  ctx.fillStyle = '#b9bdc5';
   ctx.font = '10px sans-serif';
   ctx.fillText('¥' + fmt(max), padL + 2, padT + 9);
 }
@@ -453,18 +473,15 @@ function renderStats() {
   const incCats = s.byCategory.filter((c) => c.type === 'income');
   const legend = (cats, total) => cats.map((c, i) => `
     <div class="legend-item">
-      <span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span>
-      <span class="l-name">${esc(c.icon)} ${esc(c.name)}</span>
-      <span class="l-val">¥${fmt(c.amount)}</span>
-      <span class="l-pct">${total > 0 ? Math.round((c.amount / total) * 100) : 0}%</span>
-    </div>`).join('') || '<div class="legend-item" style="color:#8a90a6">暂无数据</div>';
+      <div class="legend-line">
+        <span class="l-name">${esc(c.icon)} ${esc(c.name)}</span>
+        <span class="l-val">¥${fmt(c.amount)}</span>
+        <span class="l-pct">${total > 0 ? Math.round((c.amount / total) * 100) : 0}%</span>
+      </div>
+      <div class="lbar"><i style="width:${total > 0 ? Math.max(2, (c.amount / total) * 100) : 0}%;background:${PALETTE[i % PALETTE.length]}"></i></div>
+    </div>`).join('') || '<div class="legend-line" style="color:#b9bdc5">暂无数据</div>';
 
   view.innerHTML = `
-    <div class="stat-nums">
-      <div class="stat-num"><div class="k">总支出</div><div class="v" style="color:var(--expense)">¥${fmt(s.expense)}</div></div>
-      <div class="stat-num"><div class="k">总收入</div><div class="v" style="color:var(--income)">¥${fmt(s.income)}</div></div>
-      <div class="stat-num"><div class="k">结余</div><div class="v">¥${fmt(s.net)}</div></div>
-    </div>
     <div class="card">
       <div class="chart-title">支出分类占比</div>
       <div class="pie-wrap">
@@ -473,7 +490,7 @@ function renderStats() {
       </div>
     </div>
     <div class="card">
-      <div class="chart-title">每日收支（<span style="color:var(--expense)">■ 支出</span> / <span style="color:var(--income)">■ 收入</span>）</div>
+      <div class="chart-title">每日收支（<span style="color:#e5484d">■ 支出</span> / <span style="color:#30a46c">■ 收入</span>）</div>
       <canvas id="bars"></canvas>
     </div>
     ${incCats.length ? `<div class="card"><div class="chart-title">收入分类</div><div class="legend">${legend(incCats, s.income)}</div></div>` : ''}`;
@@ -487,12 +504,12 @@ function renderStats() {
   }
 
   const pie = view.querySelector('#pie');
-  const pctx = setupCanvas(pie, 150, 150);
+  const pctx = setupCanvas(pie, 140, 140);
   const slices = expCats.map((c, i) => ({ value: c.amount, color: PALETTE[i % PALETTE.length] }));
   drawPie(pctx, slices, s.expense);
 
   const bars = view.querySelector('#bars');
-  const W = Math.max(200, (view.clientWidth || 360) - 56);
+  const W = Math.max(200, (view.clientWidth || 360) - 60);
   const bctx = setupCanvas(bars, W, 170);
   drawBars(bctx, days, expByDay, incByDay, W, 170);
 }
@@ -503,33 +520,31 @@ function renderSettings() {
   const lastSync = settings.lastSync ? new Date(settings.lastSync).toLocaleString('zh-CN') : '从未';
   view.innerHTML = `
     <div class="card">
-      <h3>多设备同步（GitHub 私有账本）</h3>
-      <div class="field">
-        <input id="set-token" type="password" placeholder="粘贴 GitHub Token（gist 权限）" value="${esc(settings.token)}">
+      <div class="chart-title">多设备同步（GitHub 私有账本）</div>
+      <div class="set-row">
+        <div class="set-k">GitHub Token（gist 权限）</div>
+        <input id="set-token" type="password" placeholder="粘贴 Token" value="${esc(settings.token)}">
       </div>
       <div class="set-actions">
-        <button class="save-btn" id="btn-save-token">保存 Token</button>
+        <button class="btn-primary" id="btn-save-token">保存 Token</button>
         <button class="btn-ghost" id="btn-sync-now">立即同步</button>
       </div>
       <div class="set-status">
-        <div>同步状态：<b id="set-status-txt">${settings.token ? '已配置' : '未配置（数据只存本机）'}</b></div>
-        <div>上次同步：${esc(lastSync)}</div>
+        <div>同步状态：<b>${settings.token ? '已配置' : '未配置（数据只存本机）'}</b></div>
+        <div>上次同步：<b>${esc(lastSync)}</b></div>
         ${settings.lastError ? `<div class="err-txt">上次失败：${esc(settings.lastError)}</div>` : ''}
         <div>云端账本：${settings.gistId ? esc(settings.gistId) : '（首次同步时自动创建）'}</div>
         <div>本机设备号：${esc(settings.deviceId)}</div>
       </div>
       <div class="set-help">
-        1. 在电脑浏览器打开
-        <a href="https://github.com/settings/tokens/new?scopes=gist&description=jizhang-app" target="_blank" rel="noopener">github.com → 生成 Token 页面</a>，
-        只勾选 <b>gist</b>，生成后复制；<br>
-        2. 粘贴到上面保存，立即同步一次；<br>
-        3. 手机打开同样的网址，装成 App，在设置里粘贴<b>同一个 Token</b>，
-        会自动连上同一个云端账本，两端记账互通。<br>
+        1. 打开 <a href="https://github.com/settings/tokens/new?scopes=gist&description=jizhang-app" target="_blank" rel="noopener">github.com Token 页面</a>，只勾选 <b>gist</b>，生成后复制；<br>
+        2. 粘贴到上面保存，点“立即同步”；<br>
+        3. 另一台设备填<b>同一个 Token</b>，会自动连上同一个云端账本。<br>
         不配置也能用：数据保存在本机，只是不跨设备。
       </div>
     </div>
     <div class="card">
-      <h3>关于</h3>
+      <div class="chart-title">关于</div>
       <div class="set-help">
         记账本离线版：断网、电脑关机都能记账，联网后自动同步。<br>
         数据双保险：本机一份 + GitHub 私有 Gist 一份（只有你的账号可见）。
