@@ -1,5 +1,5 @@
 'use strict';
-/* 记账本前端 —— 离线优先：数据存本机 IndexedDB，联网时经 GitHub Gist 多设备同步 */
+/* 记账本前端 —— 离线优先：数据存本机 localStorage，联网时经 GitHub Gist 多设备同步 */
 
 const $ = (s) => document.querySelector(s);
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -31,48 +31,35 @@ function genId() {
   return settings.deviceId + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 }
 
-/* ---------------- IndexedDB ---------------- */
-const DB_NAME = 'jizhang-db', DB_VER = 1;
-let _dbPromise = null;
-function idb() {
-  if (_dbPromise) return _dbPromise;
-  _dbPromise = new Promise((resolve, reject) => {
-    const rq = indexedDB.open(DB_NAME, DB_VER);
-    rq.onupgradeneeded = () => {
-      const db = rq.result;
-      if (!db.objectStoreNames.contains('records')) db.createObjectStore('records', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('categories')) db.createObjectStore('categories', { keyPath: 'id' });
+/* ---------------- 本机存储（localStorage） ---------------- */
+const LS_DATA = 'jizhang-data';
+const LS_SET = 'jizhang-settings';
+let settings = null;
+
+function loadData() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_DATA) || '{}');
+    return {
+      records: Array.isArray(d.records) ? d.records : [],
+      categories: Array.isArray(d.categories) ? d.categories : [],
     };
-    rq.onsuccess = () => resolve(rq.result);
-    rq.onerror = () => reject(rq.error);
-  });
-  return _dbPromise;
+  } catch (e) { return { records: [], categories: [] }; }
 }
-async function idbAll(store) {
-  const db = await idb();
-  return new Promise((resolve, reject) => {
-    const rq = db.transaction(store).objectStore(store).getAll();
-    rq.onsuccess = () => resolve(rq.result);
-    rq.onerror = () => reject(rq.error);
-  });
-}
-async function idbPut(store, items) {
-  const db = await idb();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(store, 'readwrite');
-    for (const it of [].concat(items)) t.objectStore(store).put(it);
-    t.oncomplete = () => resolve();
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error);
-  });
+function persist() {
+  try {
+    localStorage.setItem(LS_DATA, JSON.stringify({
+      records: state.allRecords, categories: state.allCategories,
+    }));
+    return true;
+  } catch (e) {
+    toast('本机存储空间不足，请导出或清理数据', true);
+    return false;
+  }
 }
 
-/* ---------------- 设置（localStorage） ---------------- */
-const LS_KEY = 'jizhang-settings';
-let settings = null;
 function loadSettings() {
   let s = {};
-  try { s = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { /* ignore */ }
+  try { s = JSON.parse(localStorage.getItem(LS_SET) || '{}'); } catch (e) { /* ignore */ }
   s.token = s.token || '';
   s.gistId = s.gistId || '';
   s.deviceId = s.deviceId || ('dev-' + Math.random().toString(36).slice(2, 8));
@@ -80,7 +67,7 @@ function loadSettings() {
   s.lastError = s.lastError || '';
   return s;
 }
-function saveSettings() { localStorage.setItem(LS_KEY, JSON.stringify(settings)); }
+function saveSettings() { localStorage.setItem(LS_SET, JSON.stringify(settings)); }
 
 /* ---------------- 状态 ---------------- */
 const SEED_CATEGORIES = [
@@ -103,9 +90,10 @@ const state = {
   form: { type: 'expense', categoryId: null, amount: '', note: '', date: todayStr(), editingId: null },
 };
 
-async function reload() {
-  state.allRecords = await idbAll('records');
-  state.allCategories = await idbAll('categories');
+function reload() {
+  const d = loadData();
+  state.allRecords = d.records;
+  state.allCategories = d.categories;
   state.categories = state.allCategories.filter((c) => !c.deleted);
   const month = state.month;
   state.records = state.allRecords
@@ -169,9 +157,10 @@ async function doSync(kind) {
     settings.lastSync = Date.now();
     settings.lastError = '';
     saveSettings();
-    await idbPut('records', res.records);
-    await idbPut('categories', res.categories);
-    await reload();
+    state.allRecords = res.records;
+    state.allCategories = res.categories;
+    persist();
+    reload();
     if (kind === 'manual') toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓');
   } catch (e) {
     settings.lastError = e.message;
@@ -271,15 +260,15 @@ function resetForm(keepType = true) {
   state.form = { type, categoryId: null, amount: '', note: '', date: todayStr(), editingId: null };
 }
 
-async function addCategory() {
+function addCategory() {
   const name = prompt(`新的${state.form.type === 'expense' ? '支出' : '收入'}分类名称：`);
   if (!name || !name.trim()) return;
   const icon = (prompt('配一个表情图标（可留空，直接确定用默认）：', '📦') || '📦').trim();
   const cat = { id: genId(), name: name.trim().slice(0, 20), type: state.form.type, icon: icon.slice(0, 8) || '📦', updatedAt: Date.now(), deleted: false };
   state.allCategories.push(cat);
-  await idbPut('categories', cat);
+  if (!persist()) return;
   state.form.categoryId = cat.id;
-  await reload();
+  reload();
   scheduleSync();
   toast(`已添加分类「${cat.name}」`);
 }
@@ -300,27 +289,27 @@ function formPayload() {
   };
 }
 
-async function saveRecord() {
+function saveRecord() {
   const data = formPayload();
   if (!data) return;
   const now = Date.now();
-  let rec;
   if (state.form.editingId != null) {
-    rec = Object.assign({}, state.allRecords.find((r) => r.id === state.form.editingId), data, { updatedAt: now });
+    const rec = Object.assign({}, state.allRecords.find((r) => r.id === state.form.editingId), data, { updatedAt: now });
+    const i = state.allRecords.findIndex((r) => r.id === rec.id);
+    if (i >= 0) state.allRecords[i] = rec; else state.allRecords.push(rec);
     toast('已更新');
     state.tab = 'list';
   } else {
-    rec = Object.assign({ id: genId(), deleted: false }, data, { updatedAt: now });
-    state.allRecords.push(rec);
+    state.allRecords.push(Object.assign({ id: genId(), deleted: false }, data, { updatedAt: now }));
     toast('已记一笔 ✓');
   }
-  await idbPut('records', rec);
+  if (!persist()) return;
   resetForm();
-  await reload();
+  reload();
   scheduleSync();
 }
 
-async function deleteRecord() {
+function deleteRecord() {
   const id = state.form.editingId;
   if (id == null) return;
   if (!confirm('确定删除这条记录吗？')) return;
@@ -328,12 +317,12 @@ async function deleteRecord() {
   if (rec) {
     rec.deleted = true;
     rec.updatedAt = Date.now();
-    await idbPut('records', rec);
+    persist();
   }
   toast('已删除');
   resetForm();
   state.tab = 'list';
-  await reload();
+  reload();
   scheduleSync();
 }
 
@@ -589,20 +578,21 @@ window.addEventListener('resize', () => { if (state.tab === 'stats') renderStats
 window.addEventListener('online', () => { if (settings.token) doSync('auto'); });
 
 /* ---------------- 启动 ---------------- */
-(async function init() {
+try {
   settings = loadSettings();
   saveSettings();
-  const cats = await idbAll('categories');
-  if (!cats.length) {
+  if (!loadData().categories.length) {
     const now = Date.now();
-    const seeds = SEED_CATEGORIES.map((c, i) => ({
+    state.allCategories = SEED_CATEGORIES.map((c, i) => ({
       id: 'seed-' + (i + 1), name: c[0], type: c[1], icon: c[2], updatedAt: now, deleted: false,
     }));
-    await idbPut('categories', seeds);
+    persist();
   }
-  await reload();
+  reload();
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
   if (settings.token) doSync('boot');
-})().catch((e) => toast('初始化失败：' + e.message, true));
+} catch (e) {
+  toast('初始化失败：' + e.message, true);
+}
