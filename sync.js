@@ -47,12 +47,15 @@
   async function readLedger(gistId, token) {
     const g = await gh('/gists/' + encodeURIComponent(gistId), {}, token);
     const f = g.files && g.files[GIST_FILE];
-    if (!f || !f.content) return { records: [], categories: [] };
+    if (!f || !f.content) return { records: [], categories: [], ledgers: [] };
     try {
       const data = JSON.parse(f.content);
-      if (data && Array.isArray(data.records) && Array.isArray(data.categories)) return data;
+      if (data && Array.isArray(data.records) && Array.isArray(data.categories)) {
+        if (!Array.isArray(data.ledgers)) data.ledgers = [];
+        return data;
+      }
     } catch (e) { /* 内容损坏则视为空 */ }
-    return { records: [], categories: [] };
+    return { records: [], categories: [], ledgers: [] };
   }
 
   async function writeLedger(gistId, payload, token) {
@@ -82,22 +85,25 @@
     if (!settings.token) throw new Error('未配置 GitHub Token');
     let gistId = settings.gistId || await findGist(settings.token);
     const payload = {
-      version: 1,
+      version: 2,
       syncedAt: Date.now(),
       records: local.records || [],
       categories: local.categories || [],
+      ledgers: local.ledgers || [],
     };
     if (!gistId) {
       gistId = await createLedger(payload, settings.token);
-      return { gistId, records: payload.records, categories: payload.categories, created: true };
+      return { gistId, records: payload.records, categories: payload.categories, ledgers: payload.ledgers, created: true };
     }
     const remote = await readLedger(gistId, settings.token);
     const records = mergeList(local.records, remote.records);
     const categories = mergeList(local.categories, remote.categories);
+    const ledgers = mergeList(local.ledgers, remote.ledgers);
     payload.records = records;
     payload.categories = categories;
+    payload.ledgers = ledgers;
     await writeLedger(gistId, payload, settings.token);
-    return { gistId, records, categories, created: false };
+    return { gistId, records, categories, ledgers, created: false };
   }
 
   const JZ = { syncNow, mergeList, findGist, readLedger, GIST_FILE };

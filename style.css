@@ -90,6 +90,37 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
 .empty { text-align: center; color: var(--faint); padding: 44px 10px; font-size: 14px; }
 .empty .big { font-size: 30px; display: block; margin-bottom: 10px; opacity: .6; }
 
+/* ---------- 账本切换 ---------- */
+.ledger-row {
+  display: flex; gap: 8px; padding: 8px 18px 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.ledger-row::-webkit-scrollbar { display: none; }
+.lchip {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--sub);
+  font-size: 12.5px; padding: 6px 13px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  transition: all .15s ease;
+}
+.lchip.on { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 600; }
+.lchip-add { border-style: dashed; color: var(--faint); background: transparent; }
+.lchip-add:active { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- 账本管理行 ---------- */
+.mrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mrow:last-child { border-bottom: none; }
+.mico {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--chip);
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex: none;
+}
+.mname { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.mname em { display: block; font-style: normal; font-size: 11.5px; color: var(--faint); font-weight: 400; margin-top: 1px; }
+.mini {
+  border: 1px solid var(--line); background: var(--card); color: var(--sub);
+  font-size: 12px; padding: 5px 11px; border-radius: 8px; cursor: pointer; flex: none;
+}
+.mini:active { border-color: var(--faint); color: var(--ink); }
+.mini.danger { color: var(--expense); border-color: #f3c5bd; }
+
 /* ---------- 记一笔 ---------- */
 .seg {
   display: flex; background: var(--chip); border-radius: 12px; padding: 3px; margin-bottom: 18px;

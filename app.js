@@ -42,13 +42,14 @@ function loadData() {
     return {
       records: Array.isArray(d.records) ? d.records : [],
       categories: Array.isArray(d.categories) ? d.categories : [],
+      ledgers: Array.isArray(d.ledgers) ? d.ledgers : [],
     };
-  } catch (e) { return { records: [], categories: [] }; }
+  } catch (e) { return { records: [], categories: [], ledgers: [] }; }
 }
 function persist() {
   try {
     localStorage.setItem(LS_DATA, JSON.stringify({
-      records: state.allRecords, categories: state.allCategories,
+      records: state.allRecords, categories: state.allCategories, ledgers: state.allLedgers,
     }));
     return true;
   } catch (e) {
@@ -82,10 +83,13 @@ const SEED_CATEGORIES = [
 const state = {
   month: thisMonth(),
   tab: 'add',
+  ledgerId: 'main',
   allRecords: [],
   allCategories: [],
+  allLedgers: [],
   records: [],
   categories: [],
+  ledgers: [],
   stats: null,
   form: { type: 'expense', categoryId: null, amount: '', note: '', date: todayStr(), editingId: null },
 };
@@ -94,10 +98,13 @@ function reload() {
   const d = loadData();
   state.allRecords = d.records;
   state.allCategories = d.categories;
+  state.allLedgers = d.ledgers;
+  state.ledgers = state.allLedgers.filter((L) => !L.deleted);
+  if (!state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
   state.categories = state.allCategories.filter((c) => !c.deleted);
-  const month = state.month;
+  const month = state.month, lid = state.ledgerId;
   state.records = state.allRecords
-    .filter((r) => !r.deleted && r.date.startsWith(month))
+    .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && r.date.startsWith(month))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
   computeStats();
   render();
@@ -151,7 +158,7 @@ async function doSync(kind) {
   syncing = true;
   updateSyncChip();
   try {
-    const local = { records: state.allRecords, categories: state.allCategories };
+    const local = { records: state.allRecords, categories: state.allCategories, ledgers: state.allLedgers };
     const res = await JZ.syncNow(settings, local);
     settings.gistId = res.gistId;
     settings.lastSync = Date.now();
@@ -159,6 +166,7 @@ async function doSync(kind) {
     saveSettings();
     state.allRecords = res.records;
     state.allCategories = res.categories;
+    state.allLedgers = res.ledgers || [];
     persist();
     reload();
     if (kind === 'manual') toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓');
@@ -193,6 +201,8 @@ function updateSyncChip() {
 /* ---------------- 顶栏 + 结余卡 ---------------- */
 function renderHeader() {
   $('#month-label').textContent = monthLabel(state.month);
+  const cur = state.ledgers.find((L) => L.id === state.ledgerId);
+  $('.hero-k').textContent = (cur && cur.id !== 'main' ? cur.name + ' · ' : '') + '本月结余';
   const s = state.stats;
   $('#sum-expense').textContent = '¥' + fmt(s.expense);
   $('#sum-income').textContent = '¥' + fmt(s.income);
@@ -200,6 +210,62 @@ function renderHeader() {
   net.textContent = (s.net < 0 ? '-¥' : '¥') + fmt(Math.abs(s.net));
   net.classList.toggle('neg', s.net < 0);
   updateSyncChip();
+}
+
+/* ---------------- 账本切换 ---------------- */
+function renderLedgers() {
+  const el = $('#ledger-row');
+  if (!el) return;
+  el.innerHTML = state.ledgers.map((L) => `
+    <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('') +
+    `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
+  el.querySelectorAll('[data-ledger]').forEach((b) => {
+    b.onclick = () => { state.ledgerId = b.dataset.ledger; reload(); };
+  });
+  el.querySelector('#btn-add-ledger').onclick = addLedger;
+}
+
+function addLedger() {
+  const name = prompt('新账本名称（如：国庆旅行、装修）：');
+  if (!name || !name.trim()) return;
+  const icon = (prompt('选一个图标（表情，可留空）：', '🗂️') || '🗂️').trim() || '🗂️';
+  const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8), updatedAt: Date.now(), deleted: false };
+  state.allLedgers.push(L);
+  if (!persist()) return;
+  state.ledgerId = L.id;
+  reload();
+  scheduleSync();
+  toast(`已创建账本「${L.name}」`);
+}
+
+function renameLedger(id) {
+  const L = state.allLedgers.find((x) => x.id === id && !x.deleted);
+  if (!L) return;
+  const name = prompt('重命名账本：', L.name);
+  if (!name || !name.trim()) return;
+  L.name = name.trim().slice(0, 12);
+  L.updatedAt = Date.now();
+  persist();
+  reload();
+  scheduleSync();
+  toast('已重命名');
+}
+
+function deleteLedger(id) {
+  const L = state.allLedgers.find((x) => x.id === id && !x.deleted);
+  if (!L || id === 'main') return;
+  const n = state.allRecords.filter((r) => !r.deleted && (r.ledgerId || 'main') === id).length;
+  if (!confirm(`删除账本「${L.name}」？其中 ${n} 条记录也会一并删除。`)) return;
+  L.deleted = true;
+  L.updatedAt = Date.now();
+  for (const r of state.allRecords) {
+    if (!r.deleted && (r.ledgerId || 'main') === id) { r.deleted = true; r.updatedAt = Date.now(); }
+  }
+  if (state.ledgerId === id) state.ledgerId = 'main';
+  persist();
+  reload();
+  scheduleSync();
+  toast('已删除账本');
 }
 
 /* ---------------- 记一笔 ---------------- */
@@ -300,7 +366,7 @@ function saveRecord() {
     toast('已更新');
     state.tab = 'list';
   } else {
-    state.allRecords.push(Object.assign({ id: genId(), deleted: false }, data, { updatedAt: now }));
+    state.allRecords.push(Object.assign({ id: genId(), ledgerId: state.ledgerId, deleted: false }, data, { updatedAt: now }));
     toast('已记一笔 ✓');
   }
   if (!persist()) return;
@@ -507,7 +573,19 @@ function renderStats() {
 function renderSettings() {
   const view = $('#view');
   const lastSync = settings.lastSync ? new Date(settings.lastSync).toLocaleString('zh-CN') : '从未';
+  const ledgerRows = state.ledgers.map((L) => {
+    const n = state.allRecords.filter((r) => !r.deleted && (r.ledgerId || 'main') === L.id).length;
+    return `<div class="mrow">
+      <span class="mico">${esc(L.icon)}</span>
+      <span class="mname">${esc(L.name)}<em>${n} 条记录${L.id === 'main' ? ' · 主账本，不可删除' : ''}</em></span>
+      ${L.id === 'main' ? '' : `<button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
+    </div>`;
+  }).join('');
   view.innerHTML = `
+    <div class="card">
+      <div class="chart-title">账本管理</div>
+      ${ledgerRows}
+    </div>
     <div class="card">
       <div class="chart-title">多设备同步（GitHub 私有账本）</div>
       <div class="set-row">
@@ -548,11 +626,14 @@ function renderSettings() {
     if (settings.token) { toast('Token 已保存，开始同步…'); doSync('manual'); }
   };
   view.querySelector('#btn-sync-now').onclick = () => doSync('manual');
+  view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
+  view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
 }
 
 /* ---------------- 渲染入口 ---------------- */
 function render() {
   renderHeader();
+  renderLedgers();
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === state.tab));
   if (state.tab === 'add') renderAdd();
   else if (state.tab === 'list') renderList();
@@ -581,13 +662,23 @@ window.addEventListener('online', () => { if (settings.token) doSync('auto'); })
 try {
   settings = loadSettings();
   saveSettings();
-  if (!loadData().categories.length) {
+  const d0 = loadData();
+  state.allRecords = d0.records;
+  state.allCategories = d0.categories;
+  state.allLedgers = d0.ledgers;
+  let dirty = false;
+  if (!state.allLedgers.length) {
+    state.allLedgers = [{ id: 'main', name: '主账本', icon: '💼', updatedAt: Date.now(), deleted: false }];
+    dirty = true;
+  }
+  if (!state.allCategories.length) {
     const now = Date.now();
     state.allCategories = SEED_CATEGORIES.map((c, i) => ({
       id: 'seed-' + (i + 1), name: c[0], type: c[1], icon: c[2], updatedAt: now, deleted: false,
     }));
-    persist();
+    dirty = true;
   }
+  if (dirty) persist();
   reload();
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
