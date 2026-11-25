@@ -39,18 +39,20 @@
 全部在 `data\ledger.db`（单个文件）。复制这个文件就是完整备份；
 想恢复时把它放回去、重启服务即可。
 
-## GitHub 备份（防电脑丢失）
+## GitHub 自动备份（防电脑丢失）
 
 代码仓库：<https://github.com/xq1125/jizhang>（**私有仓库**，只有你的账号能看）
 
-- 程序代码：改动后 `git add -A && git commit && git push` 即可更新
-- **账本数据**：双击 **`备份数据到GitHub.bat`**，会把 `data\ledger.db` 提交并推送到仓库的 `data/` 目录。建议每隔几天记完账后备份一次
+- **每记一笔账，约 8 秒后服务会自动把账本快照（`backups/ledger.db`）提交并推送到 GitHub**，无需手动操作；断网/关机时会在服务窗口提示失败并自动重试
+- 手机记的账同样自动备份（都是经过电脑上的服务）
+- 想关掉自动备份：新建环境变量 `JIZHANG_AUTO_BACKUP=0`
+- 程序代码改动后仍需手动 `git add -A && git commit && git push`
 
 ### 电脑重装/格式化后如何恢复
 
-1. 安装 Git 和 Python 3（python.org，勾选 Add to PATH）
-2. `git clone https://github.com/xq1125/jizhang.git`（需要登录你的 GitHub 账号）
-3. 账本数据就在仓库 `data\ledger.db`（clone 下来即已恢复；若没有，说明上次备份后没再记账）
+1. 安装 Git 和 Python 3（python.org，勾选 Add to PATH），`gh auth login` 或 git 凭据登录你的 GitHub
+2. `git clone https://github.com/xq1125/jizhang.git`
+3. 直接启动服务即可：**服务发现本地没有账本时，会自动从仓库里的 `backups\ledger.db` 还原**
 4. 修改 `启动记账.bat` 里的 Python 路径（或直接用 `python server.py` 启动）
 
 ## 常见问题

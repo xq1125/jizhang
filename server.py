@@ -14,10 +14,13 @@ import datetime
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
+import time
 import traceback
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,7 +30,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "ledger.db")
+BACKUP_DIR = os.path.join(BASE_DIR, "backups")
+BACKUP_DB = os.path.join(BACKUP_DIR, "ledger.db")
 PORT = int(os.environ.get("JIZHANG_PORT", "8765"))
+
+# 自动备份：每次改动后静候几秒，把账本快照 commit + push 到 GitHub（origin/main）
+AUTO_SYNC = os.environ.get("JIZHANG_AUTO_BACKUP", "1") != "0"
+QUIET_SECONDS = float(os.environ.get("JIZHANG_SYNC_QUIET", "8"))
+RETRY_SECONDS = 60
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
@@ -76,6 +87,9 @@ def now_str():
 def init_db():
     global _db
     os.makedirs(DATA_DIR, exist_ok=True)
+    if not os.path.exists(DB_PATH) and os.path.isfile(BACKUP_DB):
+        shutil.copy2(BACKUP_DB, DB_PATH)
+        print("[恢复] 账本不存在，已从 GitHub 备份还原 data/ledger.db", flush=True)
     _db = sqlite3.connect(DB_PATH, check_same_thread=False)
     _db.row_factory = sqlite3.Row
     with _db_lock:
@@ -280,6 +294,7 @@ def api_post(path, body, handler):
             " VALUES(?,?,?,?,?,?,?)",
             (data["type"], data["amount_cents"], data["category_id"], data["date"], data["note"], ts, ts),
         )
+        SYNC.notify()
         return 201, {"ok": True, "id": cur.lastrowid}
     if path == "/api/categories":
         name = str(body.get("name") or "").strip()[:20]
@@ -297,6 +312,7 @@ def api_post(path, body, handler):
             row = q("SELECT * FROM categories WHERE name=? AND type=?", (name, t))[0]
             return 200, {"ok": True, "category": row, "existed": True}
         row = q("SELECT * FROM categories WHERE id=?", (cur.lastrowid,))[0]
+        SYNC.notify()
         return 201, {"ok": True, "category": row}
     raise NotFound()
 
@@ -313,6 +329,7 @@ def api_put(path, body, handler):
             " WHERE id=?",
             (data["type"], data["amount_cents"], data["category_id"], data["date"], data["note"], now_str(), rid),
         )
+        SYNC.notify()
         return 200, {"ok": True, "id": rid}
     raise NotFound()
 
@@ -324,6 +341,7 @@ def api_delete(path, handler):
         cur = x("DELETE FROM records WHERE id=?", (rid,))
         if cur.rowcount == 0:
             raise NotFound("记录不存在")
+        SYNC.notify()
         return 200, {"ok": True, "id": rid}
     raise NotFound()
 
@@ -446,6 +464,104 @@ class Server(ThreadingHTTPServer):
         traceback.print_exc()
 
 
+# ---------------------------------------------------------------- auto sync
+
+def _git(*args, timeout=60):
+    r = subprocess.run(
+        ["git"] + list(args), cwd=BASE_DIR, capture_output=True,
+        timeout=timeout, creationflags=NO_WINDOW,
+    )
+    out = (r.stdout + r.stderr).decode("utf-8", errors="replace").strip()
+    return r.returncode, out
+
+
+def backup_and_push():
+    """把账本做成一致性快照，提交并推送。返回 (成功?, 说明)。"""
+    if not os.path.isfile(DB_PATH):
+        return True, "无数据"
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    tmp = os.path.join(BACKUP_DIR, "ledger.tmp.db")
+    dst = sqlite3.connect(tmp)
+    try:
+        with _db_lock:
+            _db.backup(dst)
+    finally:
+        dst.close()
+    os.replace(tmp, BACKUP_DB)
+
+    code, out = _git("add", "backups/ledger.db")
+    if code != 0:
+        return False, "git add 失败: " + out
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    code, out = _git("commit", "-m", "auto backup " + ts)
+    if code != 0 and "nothing to commit" not in out and "nothing added" not in out:
+        return False, "git commit 失败: " + out
+    code, out = _git("push", "origin", "main")
+    if code != 0:
+        return False, "git push 失败: " + out
+    return True, ""
+
+
+class SyncWorker(threading.Thread):
+    """后台线程：改动后静候 QUIET_SECONDS 再备份；失败每 RETRY_SECONDS 重试。"""
+
+    def __init__(self):
+        super().__init__(daemon=True, name="auto-sync")
+        self.cond = threading.Condition()
+        self.dirty = False
+        self.last_change = 0.0
+        self.disabled = False
+
+    def notify(self):
+        if self.disabled:
+            return
+        with self.cond:
+            self.dirty = True
+            self.last_change = time.time()
+            self.cond.notify()
+
+    def run(self):
+        while True:
+            with self.cond:
+                while not self.dirty:
+                    self.cond.wait()
+                while time.time() - self.last_change < QUIET_SECONDS:
+                    self.cond.wait(QUIET_SECONDS)
+                self.dirty = False
+            try:
+                ok, msg = backup_and_push()
+            except FileNotFoundError:
+                print("[自动备份] 找不到 git 命令，自动备份已关闭", flush=True)
+                self.disabled = True
+                return
+            except Exception as e:  # noqa: BLE001
+                ok, msg = False, str(e)
+            if ok:
+                print("[%s] [自动备份] 已同步到 GitHub" % datetime.datetime.now().strftime("%H:%M:%S"), flush=True)
+            else:
+                print("[%s] [自动备份] 失败: %s（%d 秒后重试）"
+                      % (datetime.datetime.now().strftime("%H:%M:%S"), msg, RETRY_SECONDS), flush=True)
+                with self.cond:
+                    self.dirty = True
+                    self.last_change = time.time() + RETRY_SECONDS - QUIET_SECONDS
+
+
+SYNC = SyncWorker()
+
+
+def start_sync_if_enabled():
+    if not AUTO_SYNC:
+        return False
+    try:
+        code, _ = _git("remote", "get-url", "origin", timeout=10)
+    except FileNotFoundError:
+        return False
+    if code != 0:
+        return False
+    SYNC.start()
+    return True
+
+
 # ---------------------------------------------------------------- main
 
 def lan_ips():
@@ -469,6 +585,7 @@ def lan_ips():
 
 def main():
     init_db()
+    sync_on = start_sync_if_enabled()
     httpd = Server(("0.0.0.0", PORT), Handler)
     print("=" * 52)
     print("  记账本已启动  (Ctrl+C 或关闭窗口即停止)")
@@ -484,6 +601,10 @@ def main():
     else:
         print("  未检测到局域网 IP（手机可能无法连接）")
     print("  数据文件: %s" % DB_PATH)
+    if sync_on:
+        print("  自动备份: 已开启，改动后约 %d 秒自动同步到 GitHub" % QUIET_SECONDS)
+    else:
+        print("  自动备份: 未开启（找不到 git 或 origin 远程仓库）")
     print("  首次运行若 Windows 防火墙弹窗询问，请勾选“专用网络”并允许。")
     print("=" * 52, flush=True)
     try:
