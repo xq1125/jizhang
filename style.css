@@ -209,6 +209,10 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   flex: 1; border: none; outline: none; background: transparent;
   font-size: 14.5px; color: var(--ink); min-width: 0;
 }
+.frow select {
+  flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+  font-size: 14px; background: var(--card); color: var(--ink); outline: none; min-width: 0;
+}
 
 .btn-primary {
   width: 100%; padding: 14px; border: none; border-radius: 13px; margin-top: 16px;

@@ -621,6 +621,71 @@ function renderStats() {
   });
 }
 
+/* ---------------- 导出账单 ---------------- */
+function monthList() {
+  let min = null, max = null;
+  for (const r of state.allRecords) {
+    if (r.deleted) continue;
+    const m = r.date.slice(0, 7);
+    if (!min || m < min) min = m;
+    if (!max || m > max) max = m;
+  }
+  const nowM = thisMonth();
+  if (!min) min = nowM;
+  if (!max || max < nowM) max = nowM;
+  const out = [];
+  let [y, mo] = min.split("-").map(Number);
+  const [ey, em] = max.split("-").map(Number);
+  while (y < ey || (y === ey && mo <= em)) {
+    out.push(`${y}-${pad2(mo)}`);
+    mo++;
+    if (mo > 12) { mo = 1; y++; }
+  }
+  return out;
+}
+
+function csvCell(s) {
+  s = String(s ?? "");
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function exportCsv() {
+  const lid = $('#exp-ledger').value;
+  const from = $('#exp-from').value;
+  const to = $('#exp-to').value;
+  if (from > to) { toast('开始时间不能晚于结束时间', true); return; }
+  const ledgerName = {};
+  for (const L of state.allLedgers) ledgerName[L.id] = L.name;
+  const rows = state.allRecords
+    .filter((r) => !r.deleted
+      && (lid === "all" || (r.ledgerId || "main") === lid)
+      && r.date >= from + "-01" && r.date <= to + "-31")
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (!rows.length) { toast('所选范围内没有记录', true); return; }
+  const lines = ["日期,类型,分类,支出,收入,账本,备注"];
+  let exp = 0, inc = 0;
+  for (const r of rows) {
+    const e = r.type === "expense" ? (r.amount / 100).toFixed(2) : "";
+    const i = r.type === "income" ? (r.amount / 100).toFixed(2) : "";
+    if (r.type === "expense") exp += r.amount; else inc += r.amount;
+    lines.push([
+      r.date, r.type === "expense" ? "支出" : "收入", csvCell(r.catName),
+      e, i, csvCell(ledgerName[r.ledgerId || "main"] || "主账本"), csvCell(r.note || ""),
+    ].join(","));
+  }
+  lines.push(["合计", "", "", (exp / 100).toFixed(2), (inc / 100).toFixed(2), "", ""].join(","));
+  const csv = "\ufeff" + lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `记账本_${from}至${to}${lid === "all" ? "_全部账本" : "_" + (ledgerName[lid] || "")}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+  toast(`已导出 ${rows.length} 条记录`);
+}
+
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
   const view = $('#view');
@@ -633,6 +698,12 @@ function renderSettings() {
       ${L.id === 'main' ? '' : `<button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
     </div>`;
   }).join('');
+  const months = monthList();
+  const mOpt = (m, sel) => `<option value="${m}"${sel ? " selected" : ""}>${m.replace("-", "年")}月</option>`;
+  const fromOpts = months.map((m, i) => mOpt(m, i === 0)).join("");
+  const toOpts = months.map((m, i) => mOpt(m, i === months.length - 1)).join("");
+  const ledgerOpts = `<option value="all" selected>全部账本</option>` + state.ledgers.map((L) =>
+    `<option value="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</option>`).join("");
   view.innerHTML = `
     <div class="card">
       <div class="chart-title">安装成 App</div>
@@ -647,6 +718,14 @@ function renderSettings() {
     <div class="card">
       <div class="chart-title">账本管理</div>
       ${ledgerRows}
+    </div>
+    <div class="card">
+      <div class="chart-title">导出账单</div>
+      <div class="frow"><span class="fk">账本</span><select id="exp-ledger">${ledgerOpts}</select></div>
+      <div class="frow"><span class="fk">从</span><select id="exp-from">${fromOpts}</select></div>
+      <div class="frow"><span class="fk">到</span><select id="exp-to">${toOpts}</select></div>
+      <button class="btn-primary" id="btn-export">导出 CSV 文档</button>
+      <div class="set-help">按所选账本和时间范围导出，Excel / WPS 可直接打开；文件会保存到手机或电脑的下载目录。</div>
     </div>
     <div class="card">
       <div class="chart-title">多设备同步（GitHub 私有账本）</div>
@@ -688,6 +767,7 @@ function renderSettings() {
     if (settings.token) { toast('Token 已保存，开始同步…'); doSync('manual'); }
   };
   view.querySelector('#btn-sync-now').onclick = () => doSync('manual');
+  view.querySelector('#btn-export').onclick = exportCsv;
   view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
   view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
 }
