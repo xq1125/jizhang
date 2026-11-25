@@ -7,3 +7,5 @@ preview.png
 con.log
 demo.html
 import_preview.json
+cf-dist/
+.wrangler/
