@@ -84,6 +84,7 @@ const state = {
   month: thisMonth(),
   tab: 'add',
   ledgerId: 'main',
+  dayFilter: null,
   allRecords: [],
   allCategories: [],
   allLedgers: [],
@@ -395,12 +396,21 @@ function deleteRecord() {
 /* ---------------- 明细 ---------------- */
 function renderList() {
   const view = $('#view');
-  if (!state.records.length) {
-    view.innerHTML = `<div class="empty"><span class="big">🗒️</span>${monthLabel(state.month)}还没有记录<br>去「记一笔」开始吧</div>`;
+  let recs = state.records;
+  let filterBar = '';
+  if (state.dayFilter) {
+    recs = recs.filter((r) => r.date === state.dayFilter);
+    filterBar = `<div class="day-filter"><span>📅 ${dayLabel(state.dayFilter)}</span>
+      <button id="clear-day">看全月 ✕</button></div>`;
+  }
+  if (!recs.length) {
+    view.innerHTML = filterBar + `<div class="empty"><span class="big">🗒️</span>${
+      state.dayFilter ? '这一天没有记录' : monthLabel(state.month) + '还没有记录<br>去「记一笔」开始吧'}</div>`;
+    bindClearDay(view);
     return;
   }
   const groups = new Map();
-  for (const r of state.records) {
+  for (const r of recs) {
     if (!groups.has(r.date)) groups.set(r.date, []);
     groups.get(r.date).push(r);
   }
@@ -422,7 +432,8 @@ function renderList() {
     html += '</div>';
   }
   html += '</div>';
-  view.innerHTML = html;
+  view.innerHTML = filterBar + html;
+  bindClearDay(view);
   view.querySelectorAll('.rrow').forEach((el) => {
     el.onclick = () => {
       const r = state.records.find((x) => x.id === el.dataset.id);
@@ -438,6 +449,39 @@ function renderList() {
 }
 
 /* ---------------- 统计 ---------------- */
+function bindClearDay(view) {
+  const b = view.querySelector('#clear-day');
+  if (b) b.onclick = () => { state.dayFilter = null; render(); };
+}
+
+function fmtDay(cents) { return (cents / 100).toFixed(2); }
+
+function calendarHtml() {
+  const [y, m] = state.month.split('-').map(Number);
+  const lead = new Date(y, m - 1, 1).getDay();
+  const days = new Date(y, m, 0).getDate();
+  const byDate = new Map();
+  for (const r of state.records) {
+    const t = byDate.get(r.date) || { exp: 0, inc: 0 };
+    if (r.type === 'expense') t.exp += r.amount; else t.inc += r.amount;
+    byDate.set(r.date, t);
+  }
+  const today = todayStr();
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div class="cal-cell pad"></div>';
+  for (let d = 1; d <= days; d++) {
+    const ds = `${y}-${pad2(m)}-${pad2(d)}`;
+    const t = byDate.get(ds);
+    const cls = 'cal-cell' + (t ? ' has' : '') + (ds === today ? ' today' : '');
+    const amt = t
+      ? `<span class="ce">${t.exp ? '-' + fmtDay(t.exp) : ''}</span><span class="ci">${t.inc ? '+' + fmtDay(t.inc) : ''}</span>`
+      : '<span class="ce"></span><span class="ci"></span>';
+    cells += `<div class="${cls}" data-day="${ds}"><span class="cd">${d}</span>${amt}</div>`;
+  }
+  const wd = ['日', '一', '二', '三', '四', '五', '六'].map((w) => `<span class="cal-wd">${w}</span>`).join('');
+  return `<div class="cal-head">${wd}</div><div class="cal-grid">${cells}</div>`;
+}
+
 function setupCanvas(canvas, w, h) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = w * dpr;
@@ -538,6 +582,10 @@ function renderStats() {
 
   view.innerHTML = `
     <div class="card">
+      <div class="chart-title">日历总览 · 点某天看当天明细</div>
+      ${calendarHtml()}
+    </div>
+    <div class="card">
       <div class="chart-title">支出分类占比</div>
       <div class="pie-wrap">
         <canvas id="pie"></canvas>
@@ -567,6 +615,10 @@ function renderStats() {
   const W = Math.max(200, (view.clientWidth || 360) - 60);
   const bctx = setupCanvas(bars, W, 170);
   drawBars(bctx, days, expByDay, incByDay, W, 170);
+
+  view.querySelectorAll('.cal-cell.has').forEach((el) => {
+    el.onclick = () => { state.dayFilter = el.dataset.day; state.tab = 'list'; render(); };
+  });
 }
 
 /* ---------------- 设置 ---------------- */
@@ -646,14 +698,15 @@ function shiftMonth(delta) {
   const [y, m] = state.month.split('-').map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   state.month = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+  state.dayFilter = null;
   reload();
 }
 
 $('#prev-month').onclick = () => shiftMonth(-1);
 $('#next-month').onclick = () => shiftMonth(1);
-$('#this-month').onclick = () => { if (state.month !== thisMonth()) { state.month = thisMonth(); reload(); } };
+$('#this-month').onclick = () => { if (state.month !== thisMonth()) { state.month = thisMonth(); state.dayFilter = null; reload(); } };
 document.querySelectorAll('.tab').forEach((t) => {
-  t.onclick = () => { state.tab = t.dataset.tab; render(); };
+  t.onclick = () => { state.tab = t.dataset.tab; if (t.dataset.tab !== 'stats') state.dayFilter = null; render(); };
 });
 window.addEventListener('resize', () => { if (state.tab === 'stats') renderStats(); });
 window.addEventListener('online', () => { if (settings.token) doSync('auto'); });
@@ -679,6 +732,8 @@ try {
     dirty = true;
   }
   if (dirty) persist();
+  const h = location.hash.replace('#', '');
+  if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
   reload();
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
