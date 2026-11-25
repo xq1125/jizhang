@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>记账本</title>
+  <meta name="theme-color" content="#4f6ef7">
+  <meta name="description" content="简单实用的家庭记账本">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="记账本">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="month-nav">
+        <button id="prev-month" class="nav-btn" aria-label="上一月">‹</button>
+        <div class="month-label" id="month-label">—</div>
+        <button id="next-month" class="nav-btn" aria-label="下一月">›</button>
+        <button id="this-month" class="today-btn">本月</button>
+      </div>
+      <div class="summary">
+        <div class="sum-item"><span class="sum-k">支出</span><span class="sum-v expense" id="sum-expense">¥0.00</span></div>
+        <div class="sum-item"><span class="sum-k">收入</span><span class="sum-v income" id="sum-income">¥0.00</span></div>
+        <div class="sum-item"><span class="sum-k">结余</span><span class="sum-v" id="sum-net">¥0.00</span></div>
+      </div>
+    </header>
+
+    <main id="view"></main>
+
+    <nav class="tabbar">
+      <button class="tab" data-tab="add"><span class="tab-ico">✏️</span>记一笔</button>
+      <button class="tab" data-tab="list"><span class="tab-ico">📋</span>明细</button>
+      <button class="tab" data-tab="stats"><span class="tab-ico">📊</span>统计</button>
+    </nav>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

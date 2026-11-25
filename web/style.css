@@ -1,0 +1,189 @@
+/* 记账本 —— 移动端优先，桌面居中窄栏 */
+:root {
+  --primary: #4f6ef7;
+  --primary-dark: #3a55d9;
+  --expense: #e5533c;
+  --income: #1aad6e;
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --text: #22263a;
+  --muted: #8a90a6;
+  --line: #e8eaf2;
+  --radius: 14px;
+  --tabbar-h: 58px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+}
+#app {
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  box-shadow: 0 0 24px rgba(30, 40, 90, 0.06);
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  background: linear-gradient(160deg, var(--primary), var(--primary-dark));
+  color: #fff;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 14px;
+  border-radius: 0 0 18px 18px;
+}
+.month-nav { display: flex; align-items: center; gap: 6px; }
+.month-label { font-size: 17px; font-weight: 600; min-width: 118px; text-align: center; }
+.nav-btn {
+  border: none; background: rgba(255,255,255,0.16); color: #fff;
+  width: 30px; height: 30px; border-radius: 9px; font-size: 18px; cursor: pointer;
+}
+.nav-btn:active { background: rgba(255,255,255,0.3); }
+.today-btn {
+  margin-left: auto; border: 1px solid rgba(255,255,255,0.5); background: transparent;
+  color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+}
+.summary { display: flex; margin-top: 12px; gap: 8px; }
+.sum-item {
+  flex: 1; background: rgba(255,255,255,0.13); border-radius: 10px;
+  padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.sum-k { font-size: 11px; opacity: 0.85; }
+.sum-v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- 主视图 ---------- */
+main { flex: 1; padding: 14px 14px calc(var(--tabbar-h) + 18px + env(safe-area-inset-bottom)); }
+.card {
+  background: var(--card); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(30,40,90,0.05);
+}
+.card h3 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
+.empty { text-align: center; color: var(--muted); padding: 34px 10px; font-size: 14px; }
+.empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
+
+/* ---------- 记一笔 ---------- */
+.type-switch { display: flex; gap: 8px; margin-bottom: 12px; }
+.type-switch button {
+  flex: 1; padding: 10px; border-radius: 11px; border: 1.5px solid var(--line);
+  background: #fff; font-size: 15px; color: var(--muted); cursor: pointer; font-weight: 600;
+}
+.type-switch button.on-expense { border-color: var(--expense); color: var(--expense); background: #fdf0ee; }
+.type-switch button.on-income  { border-color: var(--income);  color: var(--income);  background: #ebf8f2; }
+
+.amount-box { display: flex; align-items: baseline; gap: 6px; border-bottom: 2px solid var(--line); padding: 6px 2px 10px; margin-bottom: 14px; }
+.amount-box:focus-within { border-color: var(--primary); }
+.amount-box .yen { font-size: 22px; color: var(--muted); }
+#amount {
+  border: none; outline: none; font-size: 30px; font-weight: 700; width: 100%;
+  background: transparent; color: var(--text); font-variant-numeric: tabular-nums;
+}
+
+.cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+.cat {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 2px; border-radius: 11px; border: 1.5px solid transparent;
+  background: #f5f6fa; cursor: pointer; font-size: 12px; color: var(--text);
+}
+.cat .ico { font-size: 21px; line-height: 1.2; }
+.cat.sel { border-color: var(--primary); background: #e9edfe; color: var(--primary-dark); font-weight: 600; }
+.cat.add-cat { border: 1.5px dashed #c6cbdd; background: transparent; color: var(--muted); }
+
+.field { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.field label { width: 44px; color: var(--muted); font-size: 14px; flex: none; }
+.field input {
+  flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  font-size: 15px; background: #fff; color: var(--text); outline: none; min-width: 0;
+}
+.field input:focus { border-color: var(--primary); }
+
+.save-btn {
+  width: 100%; padding: 13px; border: none; border-radius: 12px;
+  background: var(--primary); color: #fff; font-size: 16px; font-weight: 700; cursor: pointer;
+}
+.save-btn:active { background: var(--primary-dark); }
+.edit-actions { display: flex; gap: 10px; }
+.edit-actions .save-btn { flex: 1; }
+.btn-ghost {
+  padding: 13px 16px; border: 1px solid var(--line); border-radius: 12px;
+  background: #fff; color: var(--muted); font-size: 15px; cursor: pointer;
+}
+.btn-danger { border-color: #f3c5bd; color: var(--expense); background: #fff; }
+
+/* ---------- 明细 ---------- */
+.day-group { margin-bottom: 12px; }
+.day-head {
+  display: flex; justify-content: space-between; font-size: 12.5px;
+  color: var(--muted); padding: 2px 6px 6px;
+}
+.day-head .day-total { font-variant-numeric: tabular-nums; }
+.rec {
+  display: flex; align-items: center; gap: 10px; background: var(--card);
+  padding: 11px 12px; border-radius: 12px; margin-bottom: 6px; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(30,40,90,0.04);
+}
+.rec:active { transform: scale(0.99); }
+.rec .ico {
+  width: 38px; height: 38px; border-radius: 10px; background: #f2f4fa;
+  display: flex; align-items: center; justify-content: center; font-size: 19px; flex: none;
+}
+.rec .mid { flex: 1; min-width: 0; }
+.rec .name { font-size: 14.5px; font-weight: 600; }
+.rec .note { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec .amt { font-size: 15.5px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+.amt.expense { color: var(--expense); }
+.amt.income { color: var(--income); }
+
+/* ---------- 统计 ---------- */
+.chart-title { font-size: 13px; color: var(--muted); margin: 2px 0 8px; font-weight: 600; }
+canvas { width: 100%; display: block; }
+.pie-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pie-wrap canvas { flex: 0 0 150px; width: 150px; height: 150px; }
+.legend { flex: 1; min-width: 170px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3.5px 0; }
+.legend-item .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.legend-item .l-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend-item .l-val { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+.legend-item .l-pct { color: var(--muted); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.stat-nums { display: flex; gap: 8px; margin-bottom: 12px; }
+.stat-num { flex: 1; background: var(--card); border-radius: 12px; padding: 12px; text-align: center; box-shadow: 0 1px 3px rgba(30,40,90,0.05); }
+.stat-num .k { font-size: 12px; color: var(--muted); }
+.stat-num .v { font-size: 18px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+
+/* ---------- 底栏 ---------- */
+.tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+  max-width: 560px; margin: 0 auto;
+  display: flex; background: rgba(255,255,255,0.94); backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+}
+.tab {
+  flex: 1; border: none; background: none; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  font-size: 11.5px; color: var(--muted); cursor: pointer;
+}
+.tab .tab-ico { font-size: 19px; }
+.tab.on { color: var(--primary); font-weight: 700; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + 26px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 50;
+  background: rgba(34, 38, 58, 0.92); color: #fff; font-size: 13.5px;
+  padding: 9px 18px; border-radius: 999px; max-width: 82vw; text-align: center;
+  animation: pop 0.18s ease-out;
+}
+.toast.err { background: rgba(190, 60, 45, 0.95); }
+@keyframes pop { from { opacity: 0; transform: translateX(-50%) translateY(6px); } }
+
+@media (min-width: 600px) {
+  body { background: #e9ecf5; }
+  #app { margin-top: 0; }
+}
