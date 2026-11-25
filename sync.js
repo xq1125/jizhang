@@ -47,15 +47,23 @@
   async function readLedger(gistId, token) {
     const g = await gh('/gists/' + encodeURIComponent(gistId), {}, token);
     const f = g.files && g.files[GIST_FILE];
-    if (!f || !f.content) return { records: [], categories: [], ledgers: [] };
-    try {
-      const data = JSON.parse(f.content);
-      if (data && Array.isArray(data.records) && Array.isArray(data.categories)) {
-        if (!Array.isArray(data.ledgers)) data.ledgers = [];
-        return data;
-      }
-    } catch (e) { /* 内容损坏则视为空 */ }
-    return { records: [], categories: [], ledgers: [] };
+    if (!f) return { records: [], categories: [], ledgers: [] };
+    let text = f.content;
+    if (text == null || f.truncated) {
+      // 大文件在 API 响应里会被截断，改用 raw 地址读完整内容
+      const resp = await fetch(f.raw_url, { headers: { Accept: 'application/vnd.github.raw+json' } });
+      if (!resp.ok) throw new Error('读取云端账本内容失败 (HTTP ' + resp.status + ')');
+      text = await resp.text();
+    }
+    if (!text) return { records: [], categories: [], ledgers: [] };
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) { throw new Error('云端账本内容解析失败，已中止同步以保护数据'); }
+    if (!(data && Array.isArray(data.records) && Array.isArray(data.categories))) {
+      throw new Error('云端账本格式异常，已中止同步');
+    }
+    if (!Array.isArray(data.ledgers)) data.ledgers = [];
+    return data;
   }
 
   async function writeLedger(gistId, payload, token) {

@@ -440,7 +440,7 @@ function renderList() {
       if (!r) return;
       state.form = {
         type: r.type, categoryId: r.catId, amount: String(r.amount / 100),
-        note: r.note, date: r.date, editingId: r.id,
+        note: r.note || '', date: r.date, editingId: r.id,
       };
       state.tab = 'add';
       render();
