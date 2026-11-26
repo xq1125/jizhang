@@ -130,9 +130,10 @@ function reload() {
       .filter((r) => !r.deleted && tids.has(r.ledgerId || 'main'))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
   } else {
+    const curL = state.allLedgers.find((L) => L.id === lid) || { id: 'main' };
     const main = lid === 'main';
-    state.records = state.allRecords
-      .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && (!main || r.date.startsWith(month)))
+    state.records = recordsOfLedger(curL)
+      .filter((r) => !main || r.date.startsWith(month))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
   }
   computeStats();
@@ -366,13 +367,24 @@ const OTHERS_IDS = ['imp-bday'];
 function isTravel(L) { return L.group === 'travel' || TRAVEL_IDS.includes(L.id); }
 function isOffline(L) { return L.group === 'offline' || OFFLINE_IDS.includes(L.id); }
 function isOthers(L) { return L.group === 'others' || OTHERS_IDS.includes(L.id); }
+/* 账本的记录集合：virtual 账本 = 主账本里打了 tripId 标签的记录；普通账本 = ledgerId 匹配 */
+function recordsOfLedger(L) {
+  if (!L) return [];
+  if (L.virtual) {
+    return state.allRecords.filter((r) => !r.deleted && !r.mirror && (r.ledgerId || 'main') === 'main' && r.tripId === L.id);
+  }
+  if (L.id === 'main') {
+    return state.allRecords.filter((r) => !r.deleted && !r.mirror && (r.ledgerId || 'main') === 'main');
+  }
+  return state.allRecords.filter((r) => !r.deleted && !r.mirror && (r.ledgerId || 'main') === L.id);
+}
+
 function ledgerGroups(pred) {
   const out = [];
   for (const L of state.allLedgers) {
     if (L.deleted || !pred(L)) continue;
     let cents = 0, n = 0;
-    for (const r of state.allRecords) {
-      if (r.deleted || r.mirror || (r.ledgerId || 'main') !== L.id) continue;
+    for (const r of recordsOfLedger(L)) {
       n += 1;
       if (r.type === 'expense') cents += r.amount;
     }
@@ -699,6 +711,7 @@ function deleteLedger(id) {
   L.updatedAt = Date.now();
   for (const r of state.allRecords) {
     if (!r.deleted && (r.ledgerId || 'main') === id) { r.deleted = true; r.updatedAt = Date.now(); }
+    if (!r.deleted && r.tripId === id) { delete r.tripId; r.updatedAt = Date.now(); }
   }
   if (state.ledgerId === id) state.ledgerId = 'main';
   persist();
@@ -744,6 +757,10 @@ function findLedgerLink(r) {
     const L = state.allLedgers.find((x) => x.id === r.mirror.ledgerId && !x.deleted);
     if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
   }
+  if (r.tripId) {
+    const L = state.allLedgers.find((x) => x.id === r.tripId && !x.deleted);
+    if (L) return { lid: L.id, date: r.date, label: '🔗 ' + L.name };
+  }
   /* 链接只认：同一天 + 金额一致（等于小账本当天合计，或等于其中某一条） */
   if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense' && state.dayIdx) {
     for (const [k, e] of state.dayIdx) {
@@ -771,8 +788,8 @@ function ledgerDaySummary(date) {
   for (const L of state.allLedgers) {
     if (L.deleted || L.id === 'main' || L.id === state.ledgerId) continue;
     let cents = 0, n = 0;
-    for (const r of state.allRecords) {
-      if (r.deleted || r.mirror || r.date !== date || (r.ledgerId || 'main') !== L.id) continue;
+    for (const r of recordsOfLedger(L)) {
+      if (r.date !== date) continue;
       if (r.type === 'expense') cents += r.amount;
       n++;
     }
@@ -916,9 +933,7 @@ function renderAdd() {
     return;
   }
   const lid = state.ledgerId;
-  const dayRecs = state.allRecords
-    .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && r.date === state.selDate)
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
+  const dayRecs = state.records.filter((r) => r.date === state.selDate);
   let exp = 0, inc = 0;
   for (const r of dayRecs) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
   let rows = '';
@@ -1131,8 +1146,10 @@ function saveRecord() {
       data.catId = GAME_CAT_ID; data.catName = '游戏'; data.catIcon = '🎮';
       if (f.game) data.note = (data.note ? f.game + ' ' + data.note : f.game);
     }
-    const lid = state.ledgerId === VIRTUAL_GAMES ? 'main' : state.ledgerId;
+    const curL = state.allLedgers.find((L) => L.id === state.ledgerId);
+    const lid = (state.ledgerId === VIRTUAL_GAMES || (curL && curL.virtual)) ? 'main' : state.ledgerId;
     const rec = Object.assign({ id: genId(), ledgerId: lid, deleted: false }, data, { updatedAt: now });
+    if (curL && curL.virtual) rec.tripId = curL.id;
     state.allRecords.push(rec);
     undo = () => {
       const cur = state.allRecords.find((r) => r.id === rec.id);
@@ -1196,12 +1213,16 @@ function applyMove() {
   if (!state.selected.size) { toast('先勾选要移动的记录', true); return; }
   const now = Date.now();
   const snaps = [];
+  const T = nl ? state.allLedgers.find((x) => x.id === nl) : null;
   for (const id of state.selected) {
     const r = state.allRecords.find((x) => x.id === id);
     if (!r || r.deleted || r.mirror) continue;
-    snaps.push({ id: r.id, date: r.date, ledgerId: r.ledgerId || 'main' });
+    snaps.push({ id: r.id, date: r.date, ledgerId: r.ledgerId || 'main', tripId: r.tripId || null });
     if (nd) r.date = nd;
-    if (nl) r.ledgerId = nl;
+    if (nl) {
+      if (T && T.virtual) { r.ledgerId = 'main'; r.tripId = nl; }
+      else { r.ledgerId = nl; delete r.tripId; }
+    }
     r.updatedAt = now;
   }
   persist();
@@ -1217,7 +1238,11 @@ function applyMove() {
     const t = Date.now();
     for (const sp of snaps) {
       const r = state.allRecords.find((x) => x.id === sp.id);
-      if (r) { r.date = sp.date; r.ledgerId = sp.ledgerId; r.updatedAt = t; }
+      if (r) {
+        r.date = sp.date; r.ledgerId = sp.ledgerId;
+        if (sp.tripId) r.tripId = sp.tripId; else delete r.tripId;
+        r.updatedAt = t;
+      }
     }
     persist();
     rebuildMirrors();
@@ -1775,10 +1800,14 @@ function exportCsv() {
   if (from > to) { toast('开始时间不能晚于结束时间', true); return; }
   const ledgerName = {};
   for (const L of state.allLedgers) ledgerName[L.id] = L.name;
+  const EL = lid === 'all' ? null : state.allLedgers.find((x) => x.id === lid);
   const rows = state.allRecords
-    .filter((r) => !r.deleted
-      && (lid === "all" || (r.ledgerId || "main") === lid)
-      && r.date >= from + "-01" && r.date <= to + "-31")
+    .filter((r) => !r.deleted && (lid === 'all'
+      ? true
+      : (EL && EL.virtual
+        ? ((r.ledgerId || 'main') === 'main' && r.tripId === lid)
+        : ((r.ledgerId || 'main') === lid))))
+    .filter((r) => r.date >= from + "-01" && r.date <= to + "-31")
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   if (!rows.length) { toast('所选范围内没有记录', true); return; }
   const lines = ["日期,类型,分类,支出,收入,账本,备注"];
@@ -1807,14 +1836,14 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v49 · 2026-11-26';
+const APP_VER = 'v50 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
   const view = $('#view');
   const lastSync = settings.lastSync ? new Date(settings.lastSync).toLocaleString('zh-CN') : '从未';
   const ledgerRows = state.ledgers.map((L) => {
-    const n = state.allRecords.filter((r) => !r.deleted && (r.ledgerId || 'main') === L.id).length;
+    const n = recordsOfLedger(L).length;
     return `<div class="mrow">
       <span class="mico">${esc(L.icon)}</span>
       <span class="mname">${esc(L.name)}<em>${n} 条记录${L.id === 'main' ? ' · 主账本，不可删除' : (isTravel(L) ? ' · 🧳旅游' : (isOffline(L) ? ' · 🌟线下' : (isOthers(L) ? ' · 📁其他' : '')))}${L.who ? ' · 👥' + esc(L.who) : ''}</em></span>
