@@ -104,8 +104,9 @@ function reload() {
   if (!state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
   state.categories = state.allCategories.filter((c) => !c.deleted);
   const month = state.month, lid = state.ledgerId;
+  const main = lid === 'main';
   state.records = state.allRecords
-    .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && r.date.startsWith(month))
+    .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && (!main || r.date.startsWith(month)))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
   computeStats();
   render();
@@ -114,7 +115,7 @@ function reload() {
 function computeStats() {
   const recs = state.records;
   let income = 0, expense = 0;
-  const byCat = new Map(), daily = new Map();
+  const byCat = new Map(), daily = new Map(), byMonth = new Map();
   for (const r of recs) {
     if (r.type === 'income') income += r.amount; else expense += r.amount;
     const key = r.catId + r.type;
@@ -122,11 +123,15 @@ function computeStats() {
     b.amount += r.amount; b.count += 1; byCat.set(key, b);
     const d = daily.get(r.date) || { date: r.date, income: 0, expense: 0 };
     d[r.type] += r.amount; daily.set(r.date, d);
+    const mk = r.date.slice(0, 7);
+    const mm = byMonth.get(mk) || { month: mk, income: 0, expense: 0 };
+    mm[r.type] += r.amount; byMonth.set(mk, mm);
   }
   state.stats = {
     income, expense, net: income - expense,
     byCategory: Array.from(byCat.values()).sort((a, b) => b.amount - a.amount),
     daily: Array.from(daily.values()).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    byMonth: Array.from(byMonth.values()).sort((a, b) => (a.month < b.month ? -1 : 1)),
   };
 }
 
@@ -201,9 +206,12 @@ function updateSyncChip() {
 
 /* ---------------- 顶栏 + 结余卡 ---------------- */
 function renderHeader() {
-  $('#month-label').textContent = monthLabel(state.month);
-  const cur = state.ledgers.find((L) => L.id === state.ledgerId);
-  $('.hero-k').textContent = (cur && cur.id !== 'main' ? cur.name + ' · ' : '') + '本月结余';
+  const main = state.ledgerId === 'main';
+  $('#month-label').textContent = main ? monthLabel(state.month) : '全部时间';
+  $('#prev-month').style.display = main ? '' : 'none';
+  $('#next-month').style.display = main ? '' : 'none';
+  $('#this-month').style.display = main ? '' : 'none';
+  $('.hero-k').textContent = main ? '本月结余' : '总结余';
   const s = state.stats;
   $('#sum-expense').textContent = '¥' + fmt(s.expense);
   $('#sum-income').textContent = '¥' + fmt(s.income);
@@ -405,7 +413,9 @@ function renderList() {
   }
   if (!recs.length) {
     view.innerHTML = filterBar + `<div class="empty"><span class="big">🗒️</span>${
-      state.dayFilter ? '这一天没有记录' : monthLabel(state.month) + '还没有记录<br>去「记一笔」开始吧'}</div>`;
+      state.dayFilter ? '这一天没有记录'
+        : state.ledgerId === 'main' ? monthLabel(state.month) + '还没有记录<br>去「记一笔」开始吧'
+        : '这个账本还没有记录<br>去「记一笔」开始吧'}</div>`;
     bindClearDay(view);
     return;
   }
@@ -521,11 +531,12 @@ function drawPie(ctx, slices, total) {
   ctx.fillText('¥' + fmt(total), cx, cy + 8);
 }
 
-function drawBars(ctx, days, expByDay, incByDay, W, H) {
+function drawBars(ctx, cols, W, H) {
   const padL = 6, padR = 6, padT = 12, padB = 20;
   const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = Math.max(1, cols.length);
   let max = 0;
-  for (let d = 1; d <= days; d++) max = Math.max(max, expByDay[d] || 0, incByDay[d] || 0);
+  for (const c of cols) max = Math.max(max, c.exp || 0, c.inc || 0);
   if (max <= 0) max = 1;
   ctx.strokeStyle = '#f0efec';
   ctx.lineWidth = 1;
@@ -533,7 +544,7 @@ function drawBars(ctx, days, expByDay, incByDay, W, H) {
     const y = padT + (plotH * i) / 2;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
   }
-  const slot = plotW / days;
+  const slot = plotW / n;
   const bw = Math.max(2, Math.min(6, slot * 0.3));
   const round = (x, y, w, h, rad) => {
     if (h <= 0) return;
@@ -550,15 +561,15 @@ function drawBars(ctx, days, expByDay, incByDay, W, H) {
   };
   ctx.font = '9px sans-serif';
   ctx.textAlign = 'center';
-  for (let d = 1; d <= days; d++) {
-    const x = padL + slot * (d - 0.5);
-    const eh = ((expByDay[d] || 0) / max) * plotH;
-    const ih = ((incByDay[d] || 0) / max) * plotH;
+  cols.forEach((c, i) => {
+    const x = padL + slot * (i + 0.5);
+    const eh = ((c.exp || 0) / max) * plotH;
+    const ih = ((c.inc || 0) / max) * plotH;
     if (eh > 0) { ctx.fillStyle = '#e5484d'; round(x - bw - 1, padT + plotH - eh, bw, eh, 2); }
     if (ih > 0) { ctx.fillStyle = '#30a46c'; round(x + 1, padT + plotH - ih, bw, ih, 2); }
     ctx.fillStyle = '#b9bdc5';
-    if (d === 1 || d % 5 === 0 || d === days) ctx.fillText(String(d), x, H - 6);
-  }
+    if (c.tick) ctx.fillText(c.label, x, H - 6);
+  });
   ctx.textAlign = 'left';
   ctx.fillStyle = '#b9bdc5';
   ctx.font = '10px sans-serif';
@@ -568,6 +579,7 @@ function drawBars(ctx, days, expByDay, incByDay, W, H) {
 function renderStats() {
   const view = $('#view');
   const s = state.stats;
+  const main = state.ledgerId === 'main';
   const expCats = s.byCategory.filter((c) => c.type === 'expense');
   const incCats = s.byCategory.filter((c) => c.type === 'income');
   const legend = (cats, total) => cats.map((c, i) => `
@@ -581,10 +593,10 @@ function renderStats() {
     </div>`).join('') || '<div class="legend-line" style="color:#b9bdc5">暂无数据</div>';
 
   view.innerHTML = `
-    <div class="card">
+    ${main ? `<div class="card">
       <div class="chart-title">日历总览 · 点某天看当天明细</div>
       ${calendarHtml()}
-    </div>
+    </div>` : ''}
     <div class="card">
       <div class="chart-title">支出分类占比</div>
       <div class="pie-wrap">
@@ -593,17 +605,27 @@ function renderStats() {
       </div>
     </div>
     <div class="card">
-      <div class="chart-title">每日收支（<span style="color:#e5484d">■ 支出</span> / <span style="color:#30a46c">■ 收入</span>）</div>
+      <div class="chart-title">${main ? '每日' : '月度'}收支（<span style="color:#e5484d">■ 支出</span> / <span style="color:#30a46c">■ 收入</span>）</div>
       <canvas id="bars"></canvas>
     </div>
     ${incCats.length ? `<div class="card"><div class="chart-title">收入分类</div><div class="legend">${legend(incCats, s.income)}</div></div>` : ''}`;
 
-  const [y, m] = state.month.split('-').map(Number);
-  const days = new Date(y, m, 0).getDate();
-  const expByDay = {}, incByDay = {};
-  for (const d of s.daily) {
-    const day = Number(d.date.slice(8, 10));
-    expByDay[day] = d.expense; incByDay[day] = d.income;
+  let cols;
+  if (main) {
+    const [y, m] = state.month.split('-').map(Number);
+    const days = new Date(y, m, 0).getDate();
+    const expByDay = {}, incByDay = {};
+    for (const d of s.daily) {
+      const day = Number(d.date.slice(8, 10));
+      expByDay[day] = d.expense; incByDay[day] = d.income;
+    }
+    cols = [];
+    for (let d = 1; d <= days; d++) {
+      cols.push({ label: String(d), exp: expByDay[d] || 0, inc: incByDay[d] || 0, tick: d === 1 || d % 5 === 0 || d === days });
+    }
+  } else {
+    cols = s.byMonth.map((b) => ({ label: Number(b.month.slice(5)) + '月', exp: b.expense, inc: b.income, tick: true }));
+    if (!cols.length) cols = [{ label: '', exp: 0, inc: 0, tick: false }];
   }
 
   const pie = view.querySelector('#pie');
@@ -614,7 +636,7 @@ function renderStats() {
   const bars = view.querySelector('#bars');
   const W = Math.max(200, (view.clientWidth || 360) - 60);
   const bctx = setupCanvas(bars, W, 170);
-  drawBars(bctx, days, expByDay, incByDay, W, 170);
+  drawBars(bctx, cols, W, 170);
 
   view.querySelectorAll('.cal-cell.has').forEach((el) => {
     el.onclick = () => { state.dayFilter = el.dataset.day; state.tab = 'list'; render(); };
@@ -713,6 +735,7 @@ function renderSettings() {
              <b>Chrome / Edge（安卓）</b>：点页面顶部的「安装」按钮；或菜单 ⋮ → 「安装应用」。<br>
              <b>QQ浏览器 / UC / 自带浏览器</b>：不支持一键安装，请用菜单 → 「添加至桌面」；想要真正的 App 体验建议装 Edge 或 Chrome。<br>
              <b>iPhone（Safari）</b>：底部分享按钮 → 「添加到主屏幕」。<br>
+             <b>都不行？</b>直接下载 <a href="./jizhang.apk">安卓 APK 安装包</a>，装完就是独立 App。<br>
              微信里点开的链接请先选「在浏览器打开」。
            </div>`}
     </div>
@@ -864,6 +887,8 @@ try {
   if (dirty) persist();
   const h = location.hash.replace('#', '');
   if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
+  const lp = new URLSearchParams(location.search).get('l');
+  if (lp) state.ledgerId = lp;
   reload();
   showInstallBanner();
   if ('serviceWorker' in navigator && window.isSecureContext) {

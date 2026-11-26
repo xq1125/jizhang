@@ -9,3 +9,4 @@ demo.html
 import_preview.json
 cf-dist/
 .wrangler/
+tools/buildenv/
