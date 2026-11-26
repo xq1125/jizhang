@@ -205,6 +205,50 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
 .btn-back:active { background: var(--chip); }
 .fh-date { font-size: 15px; font-weight: 700; }
 
+/* ---------- 底部弹层选择器 ---------- */
+.sheet-mask {
+  position: fixed; inset: 0; z-index: 60; background: rgba(20, 22, 28, 0.4);
+  opacity: 0; transition: opacity .18s ease; display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet-mask.show { opacity: 1; }
+.sheet {
+  width: min(520px, 100vw); background: var(--card);
+  border-radius: 20px 20px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  transform: translateY(24px); transition: transform .2s ease;
+  max-height: 68vh; display: flex; flex-direction: column;
+}
+.sheet-mask.show .sheet { transform: translateY(0); }
+.sheet-title { font-size: 13px; color: var(--sub); text-align: center; padding-bottom: 10px; font-weight: 600; }
+.sheet-list { overflow-y: auto; }
+.sheet-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 6px; border-bottom: 1px solid var(--line); font-size: 15px; cursor: pointer;
+}
+.sheet-item:last-child { border-bottom: none; }
+.sheet-item:active { background: var(--chip); }
+.sheet-item.on .si-label { color: var(--primary-dark); font-weight: 700; }
+.si-radio {
+  width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--faint); flex: none;
+}
+.sheet-item.on .si-radio { border-color: var(--primary-dark); background: radial-gradient(circle, var(--primary-dark) 0 4.5px, transparent 5px); }
+.sheet-cancel {
+  margin-top: 10px; border: none; background: var(--chip); color: var(--sub);
+  font-size: 14.5px; padding: 12px; border-radius: 12px; cursor: pointer;
+}
+
+/* ---------- 弹层触发按钮 ---------- */
+.mb-btn {
+  border: none; background: rgba(255,255,255,0.14); color: #fff;
+  border-radius: 8px; padding: 7px 10px; font-size: 12.5px; cursor: pointer; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-btn {
+  flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  font-size: 14px; background: var(--card); color: var(--ink); cursor: pointer;
+  text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-btn:active { border-color: var(--faint); }
+
 /* ---------- 记一笔 ---------- */
 .seg {
   display: flex; background: var(--chip); border-radius: 12px; padding: 3px; margin-bottom: 18px;

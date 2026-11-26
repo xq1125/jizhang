@@ -3,8 +3,8 @@
 
 const $ = (s) => document.querySelector(s);
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-const PALETTE = ['#3e63dd', '#e5484d', '#f76b15', '#46a758', '#8e4ec6', '#12a594',
-  '#d6409f', '#946800', '#5b7083', '#0090ff', '#6e56cf', '#e18d07'];
+const PALETTE = ['#6C8CE0', '#E08A8F', '#7FBF9A', '#E8B36C', '#9B8FD6', '#6FB7D9',
+  '#D68FB8', '#A3B56E', '#8C9AAE', '#E0A5A0', '#7DA6C9', '#B49AD6'];
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 function todayStr() {
@@ -479,6 +479,33 @@ function clearMirrors() {
   if (changed) persist();
 }
 
+/* ---------------- 底部弹层选择器（替代原生 select） ---------------- */
+function openSheet(title, options, curId, cb) {
+  const mask = document.createElement('div');
+  mask.className = 'sheet-mask';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  let html = `<div class="sheet-title">${esc(title)}</div><div class="sheet-list">`;
+  for (const o of options) {
+    html += `<div class="sheet-item${o.id === curId ? ' on' : ''}" data-sid="${esc(o.id)}">
+      <span class="si-label">${esc(o.label)}</span><span class="si-radio"></span></div>`;
+  }
+  html += '</div><button class="sheet-cancel">取消</button>';
+  sheet.innerHTML = html;
+  mask.appendChild(sheet);
+  document.body.appendChild(mask);
+  requestAnimationFrame(() => mask.classList.add('show'));
+  const close = () => {
+    mask.classList.remove('show');
+    setTimeout(() => mask.remove(), 200);
+  };
+  mask.onclick = (e) => { if (e.target === mask) close(); };
+  sheet.querySelector('.sheet-cancel').onclick = close;
+  sheet.querySelectorAll('.sheet-item').forEach((el) => {
+    el.onclick = () => { sfx('tap'); close(); cb(el.dataset.sid); };
+  });
+}
+
 /* ---------------- 记一笔 ---------------- */
 const EXPAND_LIMIT = 10;
 let catsExpanded = false;
@@ -714,12 +741,12 @@ function deleteRecord() {
 let moveState = { date: '', ledger: '' };
 
 function moveBarHtml() {
-  const opts = state.ledgers.map((L) =>
-    `<option value="${esc(L.id)}" ${moveState.ledger === L.id ? 'selected' : ''}>${esc(L.icon)} ${esc(L.name)}</option>`).join('');
+  const cur = moveState.ledger ? state.ledgers.find((L) => L.id === moveState.ledger) : null;
+  const ledgerLabel = cur ? `${cur.icon} ${cur.name}` : '账本不变';
   return `<div class="move-bar">
     <span class="mb-count">已选 ${state.selected.size} 条</span>
     <input type="date" id="mb-date" value="${esc(moveState.date)}" title="新日期，不填则不改">
-    <select id="mb-ledger" title="目标账本"><option value="">账本不变</option>${opts}</select>
+    <button class="mb-btn" id="mb-ledger">${esc(ledgerLabel)} ▾</button>
     <button id="mb-go">移动</button>
     <button id="mb-del" class="mb-del">删除</button>
   </div>`;
@@ -867,7 +894,15 @@ function renderList() {
       };
     });
     view.querySelector('#mb-date').oninput = (e) => { moveState.date = e.target.value; };
-    view.querySelector('#mb-ledger').onchange = (e) => { moveState.ledger = e.target.value; };
+    view.querySelector('#mb-ledger').onclick = () => {
+      const opts = [{ id: '', label: '账本不变' }].concat(
+        state.ledgers.map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
+      openSheet('移动到哪个账本', opts, moveState.ledger, (id) => {
+        moveState.ledger = id;
+        const cur = id ? state.ledgers.find((L) => L.id === id) : null;
+        view.querySelector('#mb-ledger').textContent = (cur ? `${cur.icon} ${cur.name}` : '账本不变') + ' ▾';
+      });
+    };
     view.querySelector('#mb-go').onclick = applyMove;
     view.querySelector('#mb-del').onclick = applyBatchDelete;
   } else {
@@ -946,20 +981,23 @@ function setupCanvas(canvas, w, h) {
 }
 
 function drawPie(ctx, slices, total, size) {
-  const cx = size / 2, cy = size / 2, R = size * 0.42, r = size * 0.245;
+  const cx = size / 2, cy = size / 2, R = size * 0.44, r = size * 0.30;
   let a = -Math.PI / 2;
   if (!slices.length) {
     ctx.fillStyle = '#f2f2ef';
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.arc(cx, cy, r, 0, Math.PI * 2, true); ctx.fill();
   }
-  for (const s of slices) {
-    const a2 = a + (s.value / total) * Math.PI * 2;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  for (const sl of slices) {
+    const a2 = a + (sl.value / total) * Math.PI * 2;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, R, a, a2);
     ctx.closePath();
-    ctx.fillStyle = s.color;
+    ctx.fillStyle = sl.color;
     ctx.fill();
+    ctx.stroke();
     a = a2;
   }
   ctx.globalCompositeOperation = 'destination-out';
@@ -1026,14 +1064,31 @@ function renderStats() {
   const main = state.ledgerId === 'main';
   const expCats = s.byCategory.filter((c) => c.type === 'expense');
   const incCats = s.byCategory.filter((c) => c.type === 'income');
-  const legendRows = (cats, total) => cats.map((c, i) => `
+  /* 配色：>=3% 的分类按序取色，更小的合并为灰色"其他"，避免彩虹图 */
+  const colorOf = new Map();
+  const slices = [];
+  let otherAmt = 0, otherN = 0;
+  for (const c of expCats) {
+    const frac = s.expense > 0 ? c.amount / s.expense : 0;
+    if (frac >= 0.03) {
+      const col = PALETTE[slices.length % PALETTE.length];
+      colorOf.set(c, col);
+      slices.push({ value: c.amount, color: col });
+    } else {
+      otherAmt += c.amount; otherN++;
+      colorOf.set(c, '#c9cdd6');
+    }
+  }
+  if (otherN > 0) slices.push({ value: otherAmt, color: '#c9cdd6' });
+  incCats.forEach((c, i) => colorOf.set(c, PALETTE[i % PALETTE.length]));
+  const legendRows = (cats, total) => cats.map((c) => `
     <div class="legend-item">
       <div class="legend-line">
         <span class="l-name">${esc(c.icon)} ${esc(c.name)}</span>
         <span class="l-val">¥${fmt(c.amount)}</span>
         <span class="l-pct">${total > 0 ? Math.round((c.amount / total) * 100) : 0}%</span>
       </div>
-      <div class="lbar"><i style="width:${total > 0 ? Math.max(2, (c.amount / total) * 100) : 0}%;background:${PALETTE[i % PALETTE.length]}"></i></div>
+      <div class="lbar"><i style="width:${total > 0 ? Math.max(2, (c.amount / total) * 100) : 0}%;background:${colorOf.get(c) || '#c9cdd6'}"></i></div>
     </div>`).join('') || '<div class="legend-line" style="color:#b9bdc5">暂无数据</div>';
   const legend = (cats, total, kind) => {
     const collapsible = cats.length > 5;
@@ -1080,7 +1135,6 @@ function renderStats() {
   const pie = view.querySelector('#pie');
   const pieSize = Math.min(260, Math.max(200, (view.clientWidth || 360) - 100));
   const pctx = setupCanvas(pie, pieSize, pieSize);
-  const slices = expCats.map((c, i) => ({ value: c.amount, color: PALETTE[i % PALETTE.length] }));
   drawPie(pctx, slices, s.expense, pieSize);
 
   const bars = view.querySelector('#bars');
@@ -1094,6 +1148,19 @@ function renderStats() {
 }
 
 /* ---------------- 导出账单 ---------------- */
+let exportState = null;
+function mLabel(m) { return m.replace('-', '年') + '月'; }
+function expLedgerLabel() {
+  if (exportState.ledger === 'all') return '全部账本';
+  const L = state.ledgers.find((x) => x.id === exportState.ledger);
+  return L ? L.icon + ' ' + L.name : '全部账本';
+}
+function initExportState() {
+  const months = monthList();
+  if (!exportState) exportState = { ledger: 'all', from: months[0], to: months[months.length - 1] };
+  if (!months.includes(exportState.from)) exportState.from = months[0];
+  if (!months.includes(exportState.to)) exportState.to = months[months.length - 1];
+}
 function monthList() {
   let min = null, max = null;
   for (const r of state.allRecords) {
@@ -1122,9 +1189,9 @@ function csvCell(s) {
 }
 
 function exportCsv() {
-  const lid = $('#exp-ledger').value;
-  const from = $('#exp-from').value;
-  const to = $('#exp-to').value;
+  const lid = exportState.ledger;
+  const from = exportState.from;
+  const to = exportState.to;
   if (from > to) { toast('开始时间不能晚于结束时间', true); return; }
   const ledgerName = {};
   for (const L of state.allLedgers) ledgerName[L.id] = L.name;
@@ -1160,7 +1227,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v34 · 2026-11-26';
+const APP_VER = 'v35 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1174,12 +1241,7 @@ function renderSettings() {
       ${L.id === 'main' ? '' : `<button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
     </div>`;
   }).join('');
-  const months = monthList();
-  const mOpt = (m, sel) => `<option value="${m}"${sel ? " selected" : ""}>${m.replace("-", "年")}月</option>`;
-  const fromOpts = months.map((m, i) => mOpt(m, i === 0)).join("");
-  const toOpts = months.map((m, i) => mOpt(m, i === months.length - 1)).join("");
-  const ledgerOpts = `<option value="all" selected>全部账本</option>` + state.ledgers.map((L) =>
-    `<option value="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</option>`).join("");
+  initExportState();
   view.innerHTML = `
     <div class="card">
       <div class="chart-title">安装成 App</div>
@@ -1206,9 +1268,9 @@ function renderSettings() {
     </div>
     <div class="card">
       <div class="chart-title">导出账单</div>
-      <div class="frow"><span class="fk">账本</span><select id="exp-ledger">${ledgerOpts}</select></div>
-      <div class="frow"><span class="fk">从</span><select id="exp-from">${fromOpts}</select></div>
-      <div class="frow"><span class="fk">到</span><select id="exp-to">${toOpts}</select></div>
+      <div class="frow"><span class="fk">账本</span><button class="exp-btn" id="exp-ledger">${esc(expLedgerLabel())} ▾</button></div>
+      <div class="frow"><span class="fk">从</span><button class="exp-btn" id="exp-from">${esc(mLabel(exportState.from))} ▾</button></div>
+      <div class="frow"><span class="fk">到</span><button class="exp-btn" id="exp-to">${esc(mLabel(exportState.to))} ▾</button></div>
       <button class="btn-primary" id="btn-export">导出 CSV 文档</button>
       <div class="set-help">按所选账本和时间范围导出，Excel / WPS 可直接打开；文件会保存到手机或电脑的下载目录。</div>
     </div>
@@ -1258,6 +1320,20 @@ function renderSettings() {
   };
   view.querySelector('#btn-sync-now').onclick = () => doSync('manual');
   view.querySelector('#btn-export').onclick = exportCsv;
+  const upd = (id, txt) => { view.querySelector(id).textContent = txt + ' ▾'; };
+  view.querySelector('#exp-ledger').onclick = () => {
+    const opts = [{ id: 'all', label: '全部账本' }].concat(
+      state.ledgers.map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
+    openSheet('导出哪个账本', opts, exportState.ledger, (id) => { exportState.ledger = id; upd('#exp-ledger', expLedgerLabel()); });
+  };
+  view.querySelector('#exp-from').onclick = () => {
+    const opts = monthList().map((m) => ({ id: m, label: mLabel(m) }));
+    openSheet('开始月份', opts, exportState.from, (id) => { exportState.from = id; upd('#exp-from', mLabel(id)); });
+  };
+  view.querySelector('#exp-to').onclick = () => {
+    const opts = monthList().map((m) => ({ id: m, label: mLabel(m) }));
+    openSheet('结束月份', opts, exportState.to, (id) => { exportState.to = id; upd('#exp-to', mLabel(id)); });
+  };
   const inst = view.querySelector('#btn-install-now');
   if (inst) inst.onclick = async () => {
     if (!deferredPrompt) return;
