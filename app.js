@@ -1068,6 +1068,8 @@ function exportCsv() {
   sfx('save');
 }
 
+const APP_VER = 'v23 · 2026-11-26';
+
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
   const view = $('#view');
@@ -1151,8 +1153,13 @@ function renderSettings() {
     <div class="card">
       <div class="chart-title">关于</div>
       <div class="set-help">
+        界面版本：<b style="color:var(--ink)">${APP_VER}</b><br>
         记账本离线版：断网、电脑关机都能记账，联网后自动同步。<br>
         数据双保险：本机一份 + GitHub 私有 Gist 一份（只有你的账号可见）。
+      </div>
+      <div class="set-actions">
+        <button class="btn-ghost" id="btn-reload">🔄 检查更新</button>
+        <button class="btn-ghost" id="btn-sound-test">🔔 试听音效</button>
       </div>
     </div>`;
 
@@ -1187,6 +1194,16 @@ function renderSettings() {
     saveSettings();
     if (settings.sound) { sfx('save'); buzz(35); }
     render();
+  };
+  view.querySelector('#btn-reload').onclick = () => {
+    toast('正在检查更新…');
+    setTimeout(() => location.reload(), 300);
+  };
+  view.querySelector('#btn-sound-test').onclick = () => {
+    if (!settings.sound) { toast('音效已关闭，先点上面的开关开启', true); return; }
+    sfx('save');
+    buzz(35);
+    setTimeout(() => sfx('sync'), 400);
   };
   view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
   view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
