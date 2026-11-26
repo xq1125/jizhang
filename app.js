@@ -643,17 +643,16 @@ function renderLedgers() {
   const plain = state.ledgers.filter((L) => L.id === 'main' || (!isTravel(L) && !isOffline(L) && !isOthers(L)));
   let chips = plain.map((L) => `
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('');
-  chips += `<button class="lchip ${(state.ledgerId === VIRTUAL_TRAVELS || inGroup === VIRTUAL_TRAVELS) ? 'on' : ''}" data-ledger="${VIRTUAL_TRAVELS}">🧳 旅游</button>`;
-  chips += `<button class="lchip ${(state.ledgerId === VIRTUAL_OFFLINE || inGroup === VIRTUAL_OFFLINE) ? 'on' : ''}" data-ledger="${VIRTUAL_OFFLINE}">🌟 线下</button>`;
-  chips += `<button class="lchip ${(state.ledgerId === VIRTUAL_OTHERS || inGroup === VIRTUAL_OTHERS) ? 'on' : ''}" data-ledger="${VIRTUAL_OTHERS}">📁 其他</button>`;
-  if (inGroup) {
-    chips += `<button class="lchip on" data-ledger="${esc(cur.id)}">${esc(cur.icon)} ${esc(cur.name)}</button>`;
-  }
+  const groupChip = (vid, label) => `<button class="lchip ${(state.ledgerId === vid || inGroup === vid) ? 'on' : ''}" data-ledger="${vid}">${label}</button>`;
+  const curChip = inGroup ? `<button class="lchip on" data-ledger="${esc(cur.id)}">${esc(cur.icon)} ${esc(cur.name)}</button>` : '';
+  chips += groupChip(VIRTUAL_TRAVELS, '🧳 旅游') + (inGroup === VIRTUAL_TRAVELS ? curChip : '');
+  chips += groupChip(VIRTUAL_OFFLINE, '🌟 线下') + (inGroup === VIRTUAL_OFFLINE ? curChip : '');
+  chips += groupChip(VIRTUAL_OTHERS, '📁 其他') + (inGroup === VIRTUAL_OTHERS ? curChip : '');
   chips += `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">🎮 游戏</button>`;
   chips += `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
   el.innerHTML = chips;
   el.querySelectorAll('[data-ledger]').forEach((b) => {
-    b.onclick = () => { state.ledgerId = b.dataset.ledger; state.gameSel = null; sfx('tap'); buzz(8); reload(); };
+    b.onclick = () => { sfx('tap'); buzz(8); navLedger(b.dataset.ledger); };
   });
   el.querySelector('#btn-add-ledger').onclick = addLedger;
 }
@@ -776,10 +775,12 @@ function findLedgerLink(r) {
 }
 
 function jumpToLedger(lid, date) {
-  state.ledgerId = lid;
   state.dayFilter = date || null;
+  if (date) state.month = date.slice(0, 7);
   state.tab = 'list';
-  reload();
+  state.showForm = false;
+  sfx('tap');
+  navLedger(lid);
 }
 
 /* 某天在其他账本（小账本）里的活动概览，用于对照跳转，不产生任何记录 */
@@ -899,6 +900,23 @@ function attachLongPress(el, cb) {
   el.addEventListener('mouseleave', cancel);
 }
 
+/* 导航栈：切账本/下钻时压入历史，返回键逐级退回而不是直接退出 */
+function navLedger(lid, gameSel) {
+  state.ledgerId = lid;
+  state.gameSel = gameSel || null;
+  reload();
+  try { history.pushState({ lid: state.ledgerId, gs: state.gameSel }, ''); } catch (e) { /* ignore */ }
+}
+window.addEventListener('popstate', (e) => {
+  const s = e.state;
+  if (s && s.lid) {
+    state.ledgerId = s.lid;
+    state.gameSel = s.gs || null;
+    state.showForm = false;
+    reload();
+  }
+});
+
 /* ---------------- 记一笔 ---------------- */
 const EXPAND_LIMIT = 10;
 let catsExpanded = false;
@@ -914,7 +932,7 @@ function renderAdd() {
         ${gs.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}
       </div>`;
     view.querySelectorAll('[data-gledger]').forEach((el) => {
-      el.onclick = () => { sfx('tap'); state.ledgerId = el.dataset.gledger; reload(); };
+      el.onclick = () => { sfx('tap'); navLedger(el.dataset.gledger); };
     });
     bindWhoButtons(view);
     return;
@@ -929,7 +947,7 @@ function renderAdd() {
       </div>`;
     view.querySelector('#btn-day-add').onclick = () => openForm(null);
     view.querySelectorAll('[data-game]').forEach((el) => {
-      el.onclick = () => { sfx('tap'); state.gameSel = el.dataset.game; state.tab = 'list'; render(); };
+      el.onclick = () => { sfx('tap'); state.tab = 'list'; navLedger(VIRTUAL_GAMES, el.dataset.game); };
     });
     return;
   }
@@ -1355,7 +1373,7 @@ function renderList() {
     view.innerHTML = tools0 + `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}</div>`;
     bindMultiToggle(view);
     view.querySelectorAll('[data-gledger]').forEach((el) => {
-      el.onclick = () => { sfx('tap'); state.ledgerId = el.dataset.gledger; reload(); };
+      el.onclick = () => { sfx('tap'); navLedger(el.dataset.gledger); };
     });
     bindWhoButtons(view);
     return;
@@ -1366,7 +1384,7 @@ function renderList() {
     view.innerHTML = tools0 + `<div class="card list-card">${gs.map(gameCardHtml).join('') || '<div class="dp-empty">还没有游戏开销</div>'}</div>`;
     bindMultiToggle(view);
     view.querySelectorAll('[data-game]').forEach((el) => {
-      el.onclick = () => { sfx('tap'); state.gameSel = el.dataset.game; render(); };
+      el.onclick = () => { sfx('tap'); navLedger(VIRTUAL_GAMES, el.dataset.game); };
     });
     return;
   }
@@ -1415,7 +1433,7 @@ function renderList() {
   bindJLinks(view);
   bindTripJumps(view);
   const gb = view.querySelector('#game-back');
-  if (gb) gb.onclick = () => { state.gameSel = null; render(); };
+  if (gb) gb.onclick = () => navLedger(VIRTUAL_GAMES);
 
   if (ms) {
     view.querySelectorAll('.rrow').forEach((el) => {
@@ -1889,7 +1907,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v54 · 2026-11-26';
+const APP_VER = 'v55 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -2152,6 +2170,7 @@ window.addEventListener('appinstalled', () => {
     if (dirty) persist();
     clearMirrors();
     reload();
+    try { history.replaceState({ lid: state.ledgerId, gs: null }, ''); } catch (e) { /* ignore */ }
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
       // 部署新版本后自动刷新；首次接管不刷新，避免多余重载
