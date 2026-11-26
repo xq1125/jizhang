@@ -1613,7 +1613,13 @@ function renderStats() {
       cols.push({ label: String(d), tipDate: `${m2}月${d}日`, exp: expByDay[d] || 0, inc: incByDay[d] || 0, tick: d === 1 || d % 5 === 0 || d === days });
     }
   } else {
-    cols = s.byMonth.map((b) => ({ label: Number(b.month.slice(5)) + '月', tipDate: Number(b.month.slice(5)) + '月', exp: b.expense, inc: b.income, tick: true }));
+    const bm = s.byMonth;
+    const step = Math.max(1, Math.ceil(bm.length / 12));
+    cols = bm.map((b, i) => ({
+      label: String(Number(b.month.slice(5))),
+      tipDate: b.month.replace("-", "年") + "月",
+      exp: b.expense, inc: b.income, tick: i % step === 0,
+    }));
     if (!cols.length) cols = [{ label: '', tipDate: '', exp: 0, inc: 0, tick: false }];
   }
 
@@ -1799,7 +1805,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v46 · 2026-11-26';
+const APP_VER = 'v47 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
