@@ -87,6 +87,8 @@ const state = {
   tab: 'add',
   ledgerId: 'main',
   dayFilter: null,
+  selDate: todayStr(),
+  showForm: false,
   multiSel: false,
   selected: new Set(),
   allRecords: [],
@@ -459,26 +461,91 @@ const EXPAND_LIMIT = 10;
 let catsExpanded = false;
 
 function renderAdd() {
+  const view = $('#view');
+  if (state.showForm) { renderForm(view); return; }
+  const lid = state.ledgerId;
+  const dayRecs = state.allRecords
+    .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && r.date === state.selDate)
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
+  let exp = 0, inc = 0;
+  for (const r of dayRecs) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
+  let rows = '';
+  for (const r of dayRecs) {
+    const link = findLedgerLink(r);
+    rows += `<div class="rrow" data-id="${esc(r.id)}">
+      <span class="rico">${esc(r.catIcon)}</span>
+      <span class="rmid"><div class="rname">${esc(r.catName)}</div>
+        ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
+      <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
+      ${link ? `<button class="jump-chip" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}">${esc(link.label)}</button>` : ''}
+    </div>`;
+  }
+  view.innerHTML = `
+    <div class="card">
+      <div class="chart-title">日历总览 · 点某天看当天、记账</div>
+      ${calendarHtml(state.selDate)}
+    </div>
+    <div class="card">
+      <div class="dp-head">
+        <div class="dp-date">${dayLabel(state.selDate)}</div>
+        <div class="dp-sum">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</div>
+      </div>
+      <button class="btn-primary" id="btn-day-add" style="margin:2px 0 12px">✏️ 记一笔</button>
+      ${rows || '<div class="dp-empty">这天还没有记录</div>'}
+    </div>`;
+  view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
+    el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); render(); };
+  });
+  view.querySelector('#btn-day-add').onclick = () => openForm(null);
+  view.querySelectorAll('.rrow').forEach((el) => {
+    el.onclick = () => {
+      const r = dayRecs.find((x) => x.id === el.dataset.id);
+      if (!r) return;
+      if (r.mirror) {
+        const link = findLedgerLink(r);
+        if (link) { jumpToLedger(link.lid, link.date); return; }
+      }
+      openForm(r);
+    };
+  });
+  view.querySelectorAll('.jump-chip').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); jumpToLedger(b.dataset.jump, b.dataset.jdate || null); };
+  });
+}
+
+function openForm(rec) {
+  state.showForm = true;
+  if (rec) {
+    state.form = {
+      type: rec.type, categoryId: rec.catId, amount: String(rec.amount / 100),
+      note: rec.note || '', date: rec.date, editingId: rec.id,
+    };
+  } else {
+    state.form = { type: 'expense', categoryId: null, amount: '', note: '', date: state.selDate, editingId: null };
+  }
+  render();
+}
+
+function renderForm(view) {
   const f = state.form;
   const cats = state.categories.filter((c) => c.type === f.type && c.id !== SYS_HUIZONG.id);
   if (f.categoryId && cats.findIndex((c) => c.id === f.categoryId) >= EXPAND_LIMIT) catsExpanded = true;
   const collapsible = cats.length > EXPAND_LIMIT;
   const shown = (collapsible && !catsExpanded) ? cats.slice(0, EXPAND_LIMIT) : cats;
   const editing = f.editingId != null;
-  const view = $('#view');
   view.innerHTML = `
     <div class="card">
-      <div class="chart-title">日历总览 · 点某天选为记账日期</div>
-      ${calendarHtml(f.date)}
-    </div>
-    <div class="card">
+      <div class="form-head">
+        <button class="btn-back" id="btn-back">←</button>
+        <div class="fh-date">${dayLabel(f.date)}</div>
+      </div>
       <div class="seg">
         <button data-type="expense" class="${f.type === 'expense' ? 'on' : ''}">支出</button>
         <button data-type="income" class="${f.type === 'income' ? 'on' : ''}">收入</button>
       </div>
       <div class="amount-row">
         <span class="yen">¥</span>
-        <input id="amount" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${esc(f.amount)}">
+        <input id="amount" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${esc(f.amount)}" autofocus>
       </div>
       <div class="cat-grid">
         ${shown.map((c) => `
@@ -504,9 +571,9 @@ function renderAdd() {
         <button class="btn-primary" id="btn-save">保存</button>`}
     </div>`;
 
-  view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
-    el.onclick = () => { f.date = el.dataset.day; render(); };
-  });
+  view.querySelector('#btn-back').onclick = () => { state.showForm = false; render(); };
+  const cancelBtn = view.querySelector('#btn-cancel');
+  if (cancelBtn) cancelBtn.onclick = () => { state.showForm = false; resetForm(); render(); };
   view.querySelectorAll('.seg button').forEach((b) => {
     b.onclick = () => { f.type = b.dataset.type; f.categoryId = null; render(); };
   });
@@ -520,10 +587,7 @@ function renderAdd() {
   view.querySelector('#f-date').onchange = (e) => { f.date = e.target.value; };
   view.querySelector('#f-note').oninput = (e) => { f.note = e.target.value; };
   view.querySelector('#btn-save').onclick = saveRecord;
-  if (editing) {
-    view.querySelector('#btn-del').onclick = deleteRecord;
-    view.querySelector('#btn-cancel').onclick = () => { resetForm(); render(); };
-  }
+  if (editing) view.querySelector('#btn-del').onclick = deleteRecord;
 }
 
 function resetForm(keepType = true) {
@@ -575,7 +639,6 @@ function saveRecord() {
       const cur = state.allRecords.find((r) => r.id === prev.id);
       if (cur) Object.assign(cur, prev, { updatedAt: Date.now() });
     };
-    state.tab = 'list';
   } else {
     const rec = Object.assign({ id: genId(), ledgerId: state.ledgerId, deleted: false }, data, { updatedAt: now });
     state.allRecords.push(rec);
@@ -588,6 +651,8 @@ function saveRecord() {
   buzz(35);
   if (!persist()) return;
   rebuildMirrors();
+  state.showForm = false;
+  state.selDate = data.date;
   resetForm();
   reload();
   scheduleSync();
@@ -607,7 +672,7 @@ function deleteRecord() {
   sfx('delete');
   buzz([25, 40, 25]);
   resetForm();
-  state.tab = 'list';
+  state.showForm = false;
   rebuildMirrors();
   reload();
   scheduleSync();
@@ -786,12 +851,9 @@ function renderList() {
           const link = findLedgerLink(r);
           if (link) { jumpToLedger(link.lid, link.date); return; }
         }
-        state.form = {
-          type: r.type, categoryId: r.catId, amount: String(r.amount / 100),
-          note: r.note || '', date: r.date, editingId: r.id,
-        };
+        state.selDate = r.date;
         state.tab = 'add';
-        render();
+        openForm(r);
       };
     });
     view.querySelectorAll('.jump-chip').forEach((b) => {
@@ -1068,7 +1130,7 @@ function exportCsv() {
   sfx('save');
 }
 
-const APP_VER = 'v23 · 2026-11-26';
+const APP_VER = 'v25 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1236,6 +1298,7 @@ document.querySelectorAll('.tab').forEach((t) => {
   t.onclick = () => {
     sfx('tap');
     state.tab = t.dataset.tab;
+    state.showForm = false;
     if (t.dataset.tab !== 'stats') state.dayFilter = null;
     state.multiSel = false;
     state.selected.clear();
@@ -1298,9 +1361,11 @@ window.addEventListener('appinstalled', () => {
     reload();
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
-      // 部署新版本后自动刷新页面，无需手动刷新
+      // 部署新版本后自动刷新；首次接管不刷新，避免多余重载
+      let hadController = !!navigator.serviceWorker.controller;
       let reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) { hadController = true; return; }
         if (reloaded) return;
         reloaded = true;
         location.reload();

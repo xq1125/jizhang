@@ -180,6 +180,19 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   font-size: 12px; padding: 5px 11px; border-radius: 8px; cursor: pointer; font-weight: 400;
 }
 
+/* ---------- 当日面板与表单头 ---------- */
+.dp-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.dp-date { font-size: 15.5px; font-weight: 700; }
+.dp-sum { font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.dp-empty { text-align: center; color: var(--faint); font-size: 13px; padding: 18px 0 8px; }
+.form-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.btn-back {
+  width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); font-size: 16px; cursor: pointer; flex: none;
+}
+.btn-back:active { background: var(--chip); }
+.fh-date { font-size: 15px; font-weight: 700; }
+
 /* ---------- 记一笔 ---------- */
 .seg {
   display: flex; background: var(--chip); border-radius: 12px; padding: 3px; margin-bottom: 18px;
