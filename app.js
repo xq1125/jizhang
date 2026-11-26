@@ -588,13 +588,15 @@ function drawBars(ctx, cols, W, H) {
   ctx.fillText('¥' + fmt(max), padL + 2, padT + 9);
 }
 
+const legendState = { exp: false, inc: false };
+
 function renderStats() {
   const view = $('#view');
   const s = state.stats;
   const main = state.ledgerId === 'main';
   const expCats = s.byCategory.filter((c) => c.type === 'expense');
   const incCats = s.byCategory.filter((c) => c.type === 'income');
-  const legend = (cats, total) => cats.map((c, i) => `
+  const legendRows = (cats, total) => cats.map((c, i) => `
     <div class="legend-item">
       <div class="legend-line">
         <span class="l-name">${esc(c.icon)} ${esc(c.name)}</span>
@@ -603,6 +605,15 @@ function renderStats() {
       </div>
       <div class="lbar"><i style="width:${total > 0 ? Math.max(2, (c.amount / total) * 100) : 0}%;background:${PALETTE[i % PALETTE.length]}"></i></div>
     </div>`).join('') || '<div class="legend-line" style="color:#b9bdc5">暂无数据</div>';
+  const legend = (cats, total, kind) => {
+    const collapsible = cats.length > 5;
+    const shown = (collapsible && !legendState[kind]) ? cats.slice(0, 5) : cats;
+    let html = legendRows(shown, total);
+    if (collapsible) {
+      html += `<button class="legend-more" data-legend="${kind}">${legendState[kind] ? '收起 ∧' : '展开其余 ' + (cats.length - 5) + ' 个 ∨'}</button>`;
+    }
+    return html;
+  };
 
   view.innerHTML = `
     ${main ? `<div class="card">
@@ -613,14 +624,14 @@ function renderStats() {
       <div class="chart-title">支出分类占比</div>
       <div class="pie-wrap">
         <canvas id="pie"></canvas>
-        <div class="legend">${legend(expCats, s.expense)}</div>
+        <div class="legend">${legend(expCats, s.expense, "exp")}</div>
       </div>
     </div>
     <div class="card">
       <div class="chart-title">${main ? '每日' : '月度'}收支（<span style="color:#e5484d">■ 支出</span> / <span style="color:#30a46c">■ 收入</span>）</div>
       <canvas id="bars"></canvas>
     </div>
-    ${incCats.length ? `<div class="card"><div class="chart-title">收入分类</div><div class="legend">${legend(incCats, s.income)}</div></div>` : ''}`;
+    ${incCats.length ? `<div class="card"><div class="chart-title">收入分类</div><div class="legend">${legend(incCats, s.income, "inc")}</div></div>` : ''}`;
 
   let cols;
   if (main) {
@@ -652,6 +663,9 @@ function renderStats() {
 
   view.querySelectorAll('.cal-cell.has').forEach((el) => {
     el.onclick = () => { state.dayFilter = el.dataset.day; state.tab = 'list'; render(); };
+  });
+  view.querySelectorAll('[data-legend]').forEach((b) => {
+    b.onclick = () => { legendState[b.dataset.legend] = !legendState[b.dataset.legend]; renderStats(); };
   });
 }
 

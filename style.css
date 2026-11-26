@@ -265,9 +265,15 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
 /* ---------- 统计 ---------- */
 .chart-title { font-size: 12.5px; color: var(--sub); margin: 0 0 14px; font-weight: 600; letter-spacing: .03em; }
 canvas { width: 100%; display: block; }
-.pie-wrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.pie-wrap canvas { flex: 0 0 140px; width: 140px; height: 140px; }
-.legend { flex: 1; min-width: 180px; }
+.pie-wrap { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+.pie-wrap canvas { align-self: center; flex: 0 0 140px; width: 140px; height: 140px; }
+.legend { min-width: 0; }
+.legend-more {
+  display: block; width: 100%; margin-top: 8px;
+  border: 1px dashed var(--faint); background: transparent; color: var(--sub);
+  font-size: 12px; padding: 7px; border-radius: 9px; cursor: pointer;
+}
+.legend-more:active { border-color: var(--ink); color: var(--ink); }
 .legend-item { padding: 5px 0; }
 .legend-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
 .legend-line .l-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
