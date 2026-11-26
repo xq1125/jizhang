@@ -390,7 +390,7 @@ function ledgerGroups(pred) {
     }
     out.push({ L, cents, n });
   }
-  return out.sort((a, b) => b.cents - a.cents);
+  return out.sort((a, b) => ((b.L.createdAt || b.L.updatedAt || 0) - (a.L.createdAt || a.L.updatedAt || 0)));
 }
 function travelGroups() { return ledgerGroups(isTravel); }
 function offlineGroups() { return ledgerGroups(isOffline); }
@@ -667,7 +667,7 @@ function addLedger() {
     { id: 'offline', label: '🌟 线下活动' },
     { id: 'others', label: '📁 其他' },
   ], 'others', (group) => {
-    const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8), updatedAt: Date.now(), deleted: false };
+    const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8), updatedAt: Date.now(), createdAt: Date.now(), deleted: false };
     if (group) L.group = group;
     const after = () => {
       state.allLedgers.push(L);
@@ -1836,7 +1836,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v51 · 2026-11-26';
+const APP_VER = 'v52 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
