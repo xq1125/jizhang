@@ -164,7 +164,8 @@ function toastUndo(msg, label, fn, ms = 3000) {
   btn.textContent = label;
   btn.onclick = () => {
     try { fn(); } catch (e) { toast('撤销失败：' + e.message, true); return; }
-    sfx('tap');
+    sfx('undo');
+    buzz([12, 20, 12]);
     hideToast();
   };
   t.appendChild(span);
@@ -204,7 +205,7 @@ async function doSync(kind) {
     state.allLedgers = res.ledgers || [];
     persist();
     reload();
-    if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); }
+    if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); buzz(20); }
   } catch (e) {
     settings.lastError = e.message;
     saveSettings();
@@ -253,9 +254,17 @@ function sfx(name) {
       o.start(t + start);
       o.stop(t + start + dur + 0.05);
     };
-    if (name === 'save') { tone(660, 0, 0.12); tone(880, 0.09, 0.2); }
+    if (name === 'coin') {
+      // 收银机：机械咔哒 + 双音高"叮~"金币声
+      tone(950, 0, 0.03, 'square', 0.035);
+      tone(1720, 0.03, 0.3, 'sine', 0.09);
+      tone(2580, 0.03, 0.34, 'sine', 0.055);
+    }
+    else if (name === 'save') { tone(660, 0, 0.12); tone(880, 0.09, 0.2); }
+    else if (name === 'undo') { tone(880, 0, 0.08, 'sine', 0.06); tone(520, 0.07, 0.12, 'sine', 0.06); }
+    else if (name === 'key') { tone(1500, 0, 0.02, 'sine', 0.022); }
     else if (name === 'tap') { tone(1200, 0, 0.04, 'triangle', 0.045); }
-    else if (name === 'delete') { tone(220, 0, 0.16, 'triangle', 0.09); }
+    else if (name === 'delete') { tone(220, 0, 0.16, 'triangle', 0.09); tone(170, 0.08, 0.14, 'triangle', 0.07); }
     else if (name === 'error') { tone(170, 0, 0.22, 'sawtooth', 0.05); }
     else if (name === 'sync') { tone(523, 0, 0.1, 'sine', 0.07); tone(659, 0.08, 0.1, 'sine', 0.07); tone(784, 0.16, 0.18, 'sine', 0.08); }
   } catch (e) { /* ignore */ }
@@ -313,7 +322,7 @@ function renderLedgers() {
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('') +
     `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
   el.querySelectorAll('[data-ledger]').forEach((b) => {
-    b.onclick = () => { state.ledgerId = b.dataset.ledger; sfx('tap'); reload(); };
+    b.onclick = () => { state.ledgerId = b.dataset.ledger; sfx('tap'); buzz(8); reload(); };
   });
   el.querySelector('#btn-add-ledger').onclick = addLedger;
 }
@@ -490,7 +499,7 @@ function renderAdd() {
     </div>`;
   bindXref(view);
   view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
-    el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); render(); };
+    el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); buzz(10); render(); };
   });
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
   view.querySelectorAll('.rrow').forEach((el) => {
@@ -574,12 +583,16 @@ function renderForm(view) {
     b.onclick = () => { f.type = b.dataset.type; f.categoryId = null; render(); };
   });
   view.querySelectorAll('.cat[data-cat]').forEach((el) => {
-    el.onclick = () => { f.categoryId = el.dataset.cat; sfx('tap'); render(); };
+    el.onclick = () => { f.categoryId = el.dataset.cat; sfx('tap'); buzz(10); render(); };
   });
   const more = view.querySelector('#cat-more');
   if (more) more.onclick = () => { catsExpanded = !catsExpanded; render(); };
   view.querySelector('[data-addcat]').onclick = addCategory;
-  view.querySelector('#amount').oninput = (e) => { f.amount = e.target.value; };
+  view.querySelector('#amount').oninput = (e) => {
+    f.amount = e.target.value;
+    sfx('key');
+    buzz(6);
+  };
   view.querySelector('#f-date').onchange = (e) => { f.date = e.target.value; };
   view.querySelector('#f-note').oninput = (e) => { f.note = e.target.value; };
   view.querySelector('#btn-save').onclick = saveRecord;
@@ -643,8 +656,8 @@ function saveRecord() {
       if (cur) { cur.deleted = true; cur.updatedAt = Date.now(); }
     };
   }
-  sfx('save');
-  buzz(35);
+  sfx('coin');
+  buzz([15, 30, 25]);
   if (!persist()) return;
   rebuildMirrors();
   state.showForm = false;
@@ -715,8 +728,8 @@ function applyMove() {
   moveState = { date: '', ledger: '' };
   reload();
   scheduleSync();
-  sfx('save');
-  buzz(35);
+  sfx('coin');
+  buzz([15, 30, 25]);
   toastUndo(`已移动 ${snaps.length} 条`, '撤销', () => {
     const t = Date.now();
     for (const sp of snaps) {
@@ -1125,10 +1138,11 @@ function exportCsv() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 8000);
   toast(`已导出 ${rows.length} 条记录`);
-  sfx('save');
+  sfx('coin');
+  buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v28 · 2026-11-26';
+const APP_VER = 'v29 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1166,7 +1180,7 @@ function renderSettings() {
       <div class="chart-title">交互体验</div>
       <div class="frow"><span class="fk" style="width:auto;flex:1">音效与震动</span>
         <button class="mini" id="sound-toggle">${settings.sound ? '已开启' : '已关闭'}</button></div>
-      <div class="set-help">保存"叮"、删除低响、同步上行琶音、切换轻点；安卓 App 上还有震动反馈。关闭后全部静音。</div>
+      <div class="set-help">记账"咔哒-叮"金币声、撤销倒播音、删除低响、同步琶音、按键轻音；每个操作都配了震动节奏。关闭后全部静音。</div>
     </div>
     <div class="card">
       <div class="chart-title">账本管理</div>
@@ -1247,9 +1261,10 @@ function renderSettings() {
   };
   view.querySelector('#btn-sound-test').onclick = () => {
     if (!settings.sound) { toast('音效已关闭，先点上面的开关开启', true); return; }
-    sfx('save');
-    buzz(35);
-    setTimeout(() => sfx('sync'), 400);
+    sfx('coin');
+    buzz([15, 30, 25]);
+    setTimeout(() => { sfx('sync'); buzz(20); }, 500);
+    setTimeout(() => { sfx('undo'); buzz([12, 20, 12]); }, 1200);
   };
   view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
   view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
@@ -1281,6 +1296,7 @@ $('#this-month').onclick = () => { if (state.month !== thisMonth()) { state.mont
 document.querySelectorAll('.tab').forEach((t) => {
   t.onclick = () => {
     sfx('tap');
+    buzz(8);
     state.tab = t.dataset.tab;
     state.showForm = false;
     if (t.dataset.tab !== 'stats') state.dayFilter = null;
