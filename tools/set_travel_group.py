@@ -12,6 +12,7 @@ TOKEN = os.environ.get("GH_TOKEN", "")
 GF = "jizhang-ledger.json"
 TRAVEL_IDS = ["imp-jp", "imp-jd", "imp-whqd", "imp-cs", "imp-xn", "imp-ly", "imp-cx"]
 OFFLINE_IDS = ["imp-xq66", "imp-xq1121"]
+OTHERS_IDS = ["imp-bday"]
 
 
 def req(method, path, body=None):
@@ -33,7 +34,7 @@ data = json.loads(txt)
 now = int(time.time() * 1000)
 n = 0
 for L in data["ledgers"]:
-    want = "travel" if L["id"] in TRAVEL_IDS else ("offline" if L["id"] in OFFLINE_IDS else None)
+    want = "travel" if L["id"] in TRAVEL_IDS else ("offline" if L["id"] in OFFLINE_IDS else ("others" if L["id"] in OTHERS_IDS else None))
     if want and L.get("group") != want:
         L["group"] = want
         L["updatedAt"] = now
@@ -47,7 +48,6 @@ if n:
     if t2 is None or live.get("truncated"):
         t2 = urllib.request.urlopen(live["raw_url"], timeout=60).read().decode()
     chk = json.loads(t2)
-    tg = [L["name"] for L in chk["ledgers"] if L.get("group") == "travel" and not L.get("deleted")]
-    og = [L["name"] for L in chk["ledgers"] if L.get("group") == "offline" and not L.get("deleted")]
-    print("云端旅游账本:", "、".join(tg))
-    print("云端线下账本:", "、".join(og))
+    for gname, key in (("旅游", "travel"), ("线下", "offline"), ("其他", "others")):
+        names = [L["name"] for L in chk["ledgers"] if L.get("group") == key and not L.get("deleted")]
+        print("云端%s账本:" % gname, "、".join(names))

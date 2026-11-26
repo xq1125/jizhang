@@ -110,6 +110,7 @@ function reload() {
   state.allLedgers = d.ledgers;
   state.ledgers = state.allLedgers.filter((L) => !L.deleted);
   if (state.ledgerId !== VIRTUAL_GAMES && state.ledgerId !== VIRTUAL_TRAVELS && state.ledgerId !== VIRTUAL_OFFLINE
+    && state.ledgerId !== VIRTUAL_OTHERS
     && !state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
   state.categories = state.allCategories.filter((c) => !c.deleted);
   state.dayIdx = buildLedgerDayIndex();
@@ -118,8 +119,8 @@ function reload() {
     state.records = state.allRecords
       .filter((r) => !r.deleted && (r.ledgerId || 'main') === 'main' && r.catId === GAME_CAT_ID && r.type === 'expense')
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
-  } else if (lid === VIRTUAL_TRAVELS || lid === VIRTUAL_OFFLINE) {
-    const pred = lid === VIRTUAL_TRAVELS ? isTravel : isOffline;
+  } else if (lid === VIRTUAL_TRAVELS || lid === VIRTUAL_OFFLINE || lid === VIRTUAL_OTHERS) {
+    const pred = lid === VIRTUAL_TRAVELS ? isTravel : (lid === VIRTUAL_OFFLINE ? isOffline : isOthers);
     const tids = new Set(state.allLedgers.filter((L) => !L.deleted && pred(L)).map((L) => L.id));
     state.records = state.allRecords
       .filter((r) => !r.deleted && tids.has(r.ledgerId || 'main'))
@@ -324,7 +325,8 @@ function renderHeader() {
   $('#this-month').style.display = main ? '' : 'none';
   $('.hero-k').textContent = main ? '本月支出'
     : (virtual ? '游戏总支出' : (state.ledgerId === VIRTUAL_TRAVELS ? '旅游总支出'
-      : (state.ledgerId === VIRTUAL_OFFLINE ? '线下总支出' : '总支出')));
+      : (state.ledgerId === VIRTUAL_OFFLINE ? '线下总支出'
+        : (state.ledgerId === VIRTUAL_OTHERS ? '其他总支出' : '总支出'))));
   const s = state.stats;
   setNum($('#sum-expense'), s.expense);
   setNum($('#sum-income'), s.income);
@@ -337,10 +339,13 @@ function renderHeader() {
 /* ---------------- 分组虚拟账本（旅游/线下） ---------------- */
 const VIRTUAL_TRAVELS = 'virtual-travels';
 const VIRTUAL_OFFLINE = 'virtual-offline';
+const VIRTUAL_OTHERS = 'virtual-others';
 const TRAVEL_IDS = ['imp-jp', 'imp-jd', 'imp-whqd', 'imp-cs', 'imp-xn', 'imp-ly', 'imp-cx'];
 const OFFLINE_IDS = ['imp-xq66', 'imp-xq1121'];
+const OTHERS_IDS = ['imp-bday'];
 function isTravel(L) { return L.group === 'travel' || TRAVEL_IDS.includes(L.id); }
 function isOffline(L) { return L.group === 'offline' || OFFLINE_IDS.includes(L.id); }
+function isOthers(L) { return L.group === 'others' || OTHERS_IDS.includes(L.id); }
 function ledgerGroups(pred) {
   const out = [];
   for (const L of state.allLedgers) {
@@ -357,6 +362,7 @@ function ledgerGroups(pred) {
 }
 function travelGroups() { return ledgerGroups(isTravel); }
 function offlineGroups() { return ledgerGroups(isOffline); }
+function othersGroups() { return ledgerGroups(isOthers); }
 function groupCardHtml(x) {
   return `<div class="rrow" data-gledger="${esc(x.L.id)}">
     <span class="rico">${esc(x.L.icon)}</span>
@@ -365,7 +371,15 @@ function groupCardHtml(x) {
     <span class="ramt expense">¥${fmt(x.cents)}</span>
   </div>`;
 }
-function virtualIds(L) { return isTravel(L) ? VIRTUAL_TRAVELS : (isOffline(L) ? VIRTUAL_OFFLINE : null); }
+function virtualIds(L) { return isTravel(L) ? VIRTUAL_TRAVELS : (isOffline(L) ? VIRTUAL_OFFLINE : (isOthers(L) ? VIRTUAL_OTHERS : null)); }
+function groupTitle(lid) {
+  return lid === VIRTUAL_TRAVELS ? '旅游账本 · 点目的地看细账'
+    : lid === VIRTUAL_OFFLINE ? '线下活动账本 · 点活动看细账'
+    : '其他账本 · 点进去看细账';
+}
+function groupsOf(lid) {
+  return lid === VIRTUAL_TRAVELS ? travelGroups() : lid === VIRTUAL_OFFLINE ? offlineGroups() : othersGroups();
+}
 
 /* ---------------- 游戏虚拟账本 ---------------- */
 const VIRTUAL_GAMES = 'virtual-games';
@@ -400,11 +414,12 @@ function renderLedgers() {
   if (!el) return;
   const cur = state.ledgers.find((L) => L.id === state.ledgerId);
   const inGroup = cur ? virtualIds(cur) : null;
-  const plain = state.ledgers.filter((L) => L.id === 'main' || (!isTravel(L) && !isOffline(L)));
+  const plain = state.ledgers.filter((L) => L.id === 'main' || (!isTravel(L) && !isOffline(L) && !isOthers(L)));
   let chips = plain.map((L) => `
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('');
   chips += `<button class="lchip ${(state.ledgerId === VIRTUAL_TRAVELS || inGroup === VIRTUAL_TRAVELS) ? 'on' : ''}" data-ledger="${VIRTUAL_TRAVELS}">🧳 旅游</button>`;
   chips += `<button class="lchip ${(state.ledgerId === VIRTUAL_OFFLINE || inGroup === VIRTUAL_OFFLINE) ? 'on' : ''}" data-ledger="${VIRTUAL_OFFLINE}">🌟 线下</button>`;
+  chips += `<button class="lchip ${(state.ledgerId === VIRTUAL_OTHERS || inGroup === VIRTUAL_OTHERS) ? 'on' : ''}" data-ledger="${VIRTUAL_OTHERS}">📁 其他</button>`;
   if (inGroup) {
     chips += `<button class="lchip on" data-ledger="${esc(cur.id)}">${esc(cur.icon)} ${esc(cur.name)}</button>`;
   }
@@ -422,10 +437,10 @@ function addLedger() {
   if (!name || !name.trim()) return;
   const icon = (prompt('选一个图标（表情，可留空）：', '🗂️') || '🗂️').trim() || '🗂️';
   openSheet('这个账本属于哪类？', [
-    { id: '', label: '📁 独立小账本' },
-    { id: 'travel', label: '🧳 旅游（归入旅游）' },
-    { id: 'offline', label: '🌟 线下活动（归入线下）' },
-  ], '', (group) => {
+    { id: 'travel', label: '🧳 旅游' },
+    { id: 'offline', label: '🌟 线下活动' },
+    { id: 'others', label: '📁 其他' },
+  ], 'others', (group) => {
     const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8), updatedAt: Date.now(), deleted: false };
     if (group) L.group = group;
     const after = () => {
@@ -659,12 +674,11 @@ let catsExpanded = false;
 function renderAdd() {
   const view = $('#view');
   if (state.showForm) { renderForm(view); return; }
-  if (state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE) {
-    const isT = state.ledgerId === VIRTUAL_TRAVELS;
-    const gs = isT ? travelGroups() : offlineGroups();
+  if (state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE || state.ledgerId === VIRTUAL_OTHERS) {
+    const gs = groupsOf(state.ledgerId);
     view.innerHTML = `
       <div class="card">
-        <div class="chart-title">${isT ? '旅游账本 · 点目的地看细账' : '线下活动账本 · 点活动看细账'}</div>
+        <div class="chart-title">${groupTitle(state.ledgerId)}</div>
         ${gs.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}
       </div>`;
     view.querySelectorAll('[data-gledger]').forEach((el) => {
@@ -1032,9 +1046,8 @@ function renderList() {
   const view = $('#view');
   let recs = state.records;
   let filterBar = '';
-  if (state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE) {
-    const isT = state.ledgerId === VIRTUAL_TRAVELS;
-    const ts = isT ? travelGroups() : offlineGroups();
+  if (state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE || state.ledgerId === VIRTUAL_OTHERS) {
+    const ts = groupsOf(state.ledgerId);
     const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
     view.innerHTML = tools0 + `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}</div>`;
     bindMultiToggle(view);
@@ -1315,11 +1328,9 @@ function renderStats() {
   const main = state.ledgerId === 'main';
   const expCats = state.ledgerId === VIRTUAL_GAMES
     ? gameGroups().map((g) => ({ name: g.name, icon: '🎮', type: 'expense', amount: g.amount, count: g.count }))
-    : state.ledgerId === VIRTUAL_TRAVELS
-      ? travelGroups().map((t) => ({ name: t.L.name, icon: t.L.icon, type: 'expense', amount: t.cents, count: t.n }))
-      : state.ledgerId === VIRTUAL_OFFLINE
-        ? offlineGroups().map((t) => ({ name: t.L.name, icon: t.L.icon, type: 'expense', amount: t.cents, count: t.n }))
-        : s.byCategory.filter((c) => c.type === 'expense');
+    : (state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE || state.ledgerId === VIRTUAL_OTHERS)
+      ? groupsOf(state.ledgerId).map((t) => ({ name: t.L.name, icon: t.L.icon, type: 'expense', amount: t.cents, count: t.n }))
+      : s.byCategory.filter((c) => c.type === 'expense');
   const incCats = s.byCategory.filter((c) => c.type === 'income');
   /* 配色：>=3% 的分类按序取色，更小的合并为灰色"其他"，避免彩虹图 */
   const colorOf = new Map();
@@ -1574,7 +1585,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v43 · 2026-11-26';
+const APP_VER = 'v44 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1584,7 +1595,7 @@ function renderSettings() {
     const n = state.allRecords.filter((r) => !r.deleted && (r.ledgerId || 'main') === L.id).length;
     return `<div class="mrow">
       <span class="mico">${esc(L.icon)}</span>
-      <span class="mname">${esc(L.name)}<em>${n} 条记录${L.id === 'main' ? ' · 主账本，不可删除' : (isTravel(L) ? ' · 🧳旅游' : (isOffline(L) ? ' · 🌟线下' : ''))}${L.who ? ' · 👥' + esc(L.who) : ''}</em></span>
+      <span class="mname">${esc(L.name)}<em>${n} 条记录${L.id === 'main' ? ' · 主账本，不可删除' : (isTravel(L) ? ' · 🧳旅游' : (isOffline(L) ? ' · 🌟线下' : (isOthers(L) ? ' · 📁其他' : '')))}${L.who ? ' · 👥' + esc(L.who) : ''}</em></span>
       ${L.id === 'main' ? '' : `<button class="mini" data-who="${esc(L.id)}">同行人</button><button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
     </div>`;
   }).join('');
