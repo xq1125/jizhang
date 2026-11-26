@@ -760,15 +760,16 @@ function findLedgerLink(r) {
     const L = state.allLedgers.find((x) => x.id === r.tripId && !x.deleted);
     if (L) return { lid: L.id, date: r.date, label: '🔗 ' + L.name };
   }
-  /* 链接只认：同一天 + 金额一致（等于小账本当天合计，或等于其中某一条） */
+  /* 链接只认：同一天 + 金额一致（等于当天合计；或等于某一条且 ≥¥50/备注提到账本名） */
   if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense' && state.dayIdx) {
     for (const [k, e] of state.dayIdx) {
       if (!k.endsWith('|' + r.date)) continue;
       if (e.total === r.amount) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 合计' };
     }
     for (const [k, e] of state.dayIdx) {
-      if (!k.endsWith('|' + r.date)) continue;
-      if (e.amounts.has(r.amount)) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 同额' };
+      if (!k.endsWith('|' + r.date) || !e.amounts.has(r.amount)) continue;
+      const noteHit = r.note && ledgerKeywords(e.L).some((kw) => r.note.includes(kw));
+      if (r.amount >= 5000 || noteHit) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 同额' };
     }
   }
   return null;
@@ -1911,7 +1912,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v56 · 2026-11-26';
+const APP_VER = 'v57 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
