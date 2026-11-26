@@ -342,9 +342,11 @@ function renderHeader() {
   const hw = $('#hero-who');
   if (hw) {
     const curL = state.allLedgers.find((L) => L.id === state.ledgerId && !L.deleted);
-    const ids = curL && curL.id !== 'main' ? ledgerWhoIds(curL) : [];
-    if (curL && curL.id !== 'main' && ids.length) {
-      hw.innerHTML = ids.map((id) => { const p = personById(id); return `<span class="hw-item"><span class="avatar" title="${esc(p.name)}">${avatarInner(p)}</span><span class="hw-name">${esc(p.name)}</span></span>`; }).join('');
+    const isSub = curL && curL.id !== 'main';
+    const ids = isSub ? ledgerWhoIds(curL) : [];
+    if (isSub) {
+      hw.innerHTML = ids.map((id) => { const p = personById(id); return `<span class="hw-item"><span class="avatar" title="${esc(p.name)}">${avatarInner(p)}</span><span class="hw-name">${esc(p.name)}</span></span>`; }).join('')
+        + `<span class="hw-ledger">${esc(curL.icon)} ${esc(curL.name)}</span>`;
       hw.onclick = () => openWhoSheet(curL);
       hw.hidden = false;
     } else {
@@ -1805,7 +1807,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v48 · 2026-11-26';
+const APP_VER = 'v49 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
