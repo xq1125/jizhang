@@ -86,6 +86,8 @@ const state = {
   tab: 'add',
   ledgerId: 'main',
   dayFilter: null,
+  multiSel: false,
+  selected: new Set(),
   allRecords: [],
   allCategories: [],
   allLedgers: [],
@@ -519,6 +521,44 @@ function deleteRecord() {
 }
 
 /* ---------------- 明细 ---------------- */
+let moveState = { date: '', ledger: '' };
+
+function moveBarHtml() {
+  const opts = state.ledgers.map((L) =>
+    `<option value="${esc(L.id)}" ${moveState.ledger === L.id ? 'selected' : ''}>${esc(L.icon)} ${esc(L.name)}</option>`).join('');
+  return `<div class="move-bar">
+    <span class="mb-count">已选 ${state.selected.size} 条</span>
+    <input type="date" id="mb-date" value="${esc(moveState.date)}" title="新日期，不填则不改">
+    <select id="mb-ledger" title="目标账本"><option value="">账本不变</option>${opts}</select>
+    <button id="mb-go">移动</button>
+  </div>`;
+}
+
+function applyMove() {
+  const nd = moveState.date;
+  const nl = moveState.ledger;
+  if (!nd && !nl) { toast('先选个新日期或目标账本', true); return; }
+  if (!state.selected.size) { toast('先勾选要移动的记录', true); return; }
+  const now = Date.now();
+  let cnt = 0;
+  for (const id of state.selected) {
+    const r = state.allRecords.find((x) => x.id === id);
+    if (!r || r.deleted || r.mirror) continue;
+    if (nd) r.date = nd;
+    if (nl) r.ledgerId = nl;
+    r.updatedAt = now;
+    cnt++;
+  }
+  persist();
+  rebuildMirrors();
+  state.multiSel = false;
+  state.selected.clear();
+  moveState = { date: '', ledger: '' };
+  reload();
+  scheduleSync();
+  toast(`已移动 ${cnt} 条`);
+}
+
 function renderList() {
   const view = $('#view');
   let recs = state.records;
@@ -528,12 +568,18 @@ function renderList() {
     filterBar = `<div class="day-filter"><span>📅 ${dayLabel(state.dayFilter)}</span>
       <button id="clear-day">看全月 ✕</button></div>`;
   }
+  const ms = state.multiSel;
+  const tools = `<div class="list-tools">
+      <button class="mini" id="btn-multi">${ms ? '✕ 退出多选' : '☑ 多选移动'}</button>
+      ${ms ? '<span class="lt-hint">勾选记录，底部统一改日期/账本；点日期头全选当天</span>' : ''}
+    </div>`;
   if (!recs.length) {
-    view.innerHTML = filterBar + `<div class="empty"><span class="big">🗒️</span>${
+    view.innerHTML = tools + filterBar + `<div class="empty"><span class="big">🗒️</span>${
       state.dayFilter ? '这一天没有记录'
         : state.ledgerId === 'main' ? monthLabel(state.month) + '还没有记录<br>去「记一笔」开始吧'
         : '这个账本还没有记录<br>去「记一笔」开始吧'}</div>`;
     bindClearDay(view);
+    bindMultiToggle(view);
     return;
   }
   const groups = new Map();
@@ -541,53 +587,90 @@ function renderList() {
     if (!groups.has(r.date)) groups.set(r.date, []);
     groups.get(r.date).push(r);
   }
-  let html = '<div class="card list-card">';
+  let html = tools + filterBar + '<div class="card list-card">';
   for (const [date, list] of groups) {
     let exp = 0, inc = 0;
     for (const r of list) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
     html += `<div class="day-group">
-      <div class="day-head"><span>${dayLabel(date)}</span>
+      <div class="day-head${ms ? ' dayhead-act' : ''}" data-dayall="${esc(date)}"><span>${dayLabel(date)}</span>
         <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
     for (const r of list) {
       const link = findLedgerLink(r);
-      html += `<div class="rrow" data-id="${esc(r.id)}">
-        <span class="rico">${esc(r.catIcon)}</span>
+      const isMirror = !!r.mirror;
+      const picked = state.selected.has(r.id);
+      html += `<div class="rrow${ms && picked ? ' picked' : ''}${ms && isMirror ? ' mirror-row' : ''}" data-id="${esc(r.id)}" data-mirror="${isMirror ? '1' : ''}">
+        ${ms ? `<span class="selbox">${picked ? '✓' : ''}</span>` : `<span class="rico">${esc(r.catIcon)}</span>`}
         <span class="rmid"><div class="rname">${esc(r.catName)}</div>
           ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
         <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
-        ${link ? `<button class="jump-chip" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}">${esc(link.label)}</button>` : ''}
+        ${!ms && link ? `<button class="jump-chip" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}">${esc(link.label)}</button>` : ''}
       </div>`;
     }
     html += '</div>';
   }
   html += '</div>';
-  view.innerHTML = filterBar + html;
+  if (ms) html += moveBarHtml();
+  view.innerHTML = html;
   bindClearDay(view);
-  view.querySelectorAll('.rrow').forEach((el) => {
-    el.onclick = () => {
-      const r = state.records.find((x) => x.id === el.dataset.id);
-      if (!r) return;
-      if (r.mirror) {
-        const link = findLedgerLink(r);
-        if (link) { jumpToLedger(link.lid, link.date); return; }
-      }
-      state.form = {
-        type: r.type, categoryId: r.catId, amount: String(r.amount / 100),
-        note: r.note || '', date: r.date, editingId: r.id,
+  bindMultiToggle(view);
+
+  if (ms) {
+    view.querySelectorAll('.rrow').forEach((el) => {
+      el.onclick = () => {
+        if (el.dataset.mirror) return;
+        const id = el.dataset.id;
+        if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+        render();
       };
-      state.tab = 'add';
-      render();
-    };
-  });
-  view.querySelectorAll('.jump-chip').forEach((b) => {
-    b.onclick = (e) => { e.stopPropagation(); jumpToLedger(b.dataset.jump, b.dataset.jdate || null); };
-  });
+    });
+    view.querySelectorAll('.dayhead-act').forEach((el) => {
+      el.onclick = () => {
+        const d = el.dataset.dayall;
+        const ids = state.records.filter((r) => r.date === d && !r.mirror).map((r) => r.id);
+        const allOn = ids.length > 0 && ids.every((id) => state.selected.has(id));
+        ids.forEach((id) => { if (allOn) state.selected.delete(id); else state.selected.add(id); });
+        render();
+      };
+    });
+    view.querySelector('#mb-date').oninput = (e) => { moveState.date = e.target.value; };
+    view.querySelector('#mb-ledger').onchange = (e) => { moveState.ledger = e.target.value; };
+    view.querySelector('#mb-go').onclick = applyMove;
+  } else {
+    view.querySelectorAll('.rrow').forEach((el) => {
+      el.onclick = () => {
+        const r = state.records.find((x) => x.id === el.dataset.id);
+        if (!r) return;
+        if (r.mirror) {
+          const link = findLedgerLink(r);
+          if (link) { jumpToLedger(link.lid, link.date); return; }
+        }
+        state.form = {
+          type: r.type, categoryId: r.catId, amount: String(r.amount / 100),
+          note: r.note || '', date: r.date, editingId: r.id,
+        };
+        state.tab = 'add';
+        render();
+      };
+    });
+    view.querySelectorAll('.jump-chip').forEach((b) => {
+      b.onclick = (e) => { e.stopPropagation(); jumpToLedger(b.dataset.jump, b.dataset.jdate || null); };
+    });
+  }
 }
 
 /* ---------------- 统计 ---------------- */
 function bindClearDay(view) {
   const b = view.querySelector('#clear-day');
   if (b) b.onclick = () => { state.dayFilter = null; render(); };
+}
+
+function bindMultiToggle(view) {
+  const b = view.querySelector('#btn-multi');
+  if (b) b.onclick = () => {
+    state.multiSel = !state.multiSel;
+    if (!state.multiSel) { state.selected.clear(); moveState = { date: '', ledger: '' }; }
+    render();
+  };
 }
 
 function fmtDay(cents) { return (cents / 100).toFixed(2); }
@@ -974,7 +1057,13 @@ $('#prev-month').onclick = () => shiftMonth(-1);
 $('#next-month').onclick = () => shiftMonth(1);
 $('#this-month').onclick = () => { if (state.month !== thisMonth()) { state.month = thisMonth(); state.dayFilter = null; reload(); } };
 document.querySelectorAll('.tab').forEach((t) => {
-  t.onclick = () => { state.tab = t.dataset.tab; if (t.dataset.tab !== 'stats') state.dayFilter = null; render(); };
+  t.onclick = () => {
+    state.tab = t.dataset.tab;
+    if (t.dataset.tab !== 'stats') state.dayFilter = null;
+    state.multiSel = false;
+    state.selected.clear();
+    render();
+  };
 });
 window.addEventListener('resize', () => { if (state.tab === 'stats') renderStats(); });
 window.addEventListener('online', () => { if (settings.token) doSync('auto'); });
