@@ -66,7 +66,7 @@ function loadSettings() {
   s.deviceId = s.deviceId || ('dev-' + Math.random().toString(36).slice(2, 8));
   s.lastSync = s.lastSync || 0;
   s.lastError = s.lastError || '';
-  s.mirror = s.mirror === undefined ? true : !!s.mirror;
+  s.mirror = !!s.mirror;
   s.sound = s.sound === undefined ? true : !!s.sound;
   return s;
 }
@@ -203,7 +203,7 @@ async function doSync(kind) {
     state.allCategories = res.categories;
     state.allLedgers = res.ledgers || [];
     persist();
-    if (rebuildMirrors()) scheduleSync();
+    if (settings.mirror) { if (rebuildMirrors()) scheduleSync(); }
     reload();
     if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); }
   } catch (e) {
@@ -404,6 +404,33 @@ function jumpToLedger(lid, date) {
   reload();
 }
 
+/* 某天在其他账本（小账本）里的活动概览，用于对照跳转，不产生任何记录 */
+function ledgerDaySummary(date) {
+  const out = [];
+  for (const L of state.allLedgers) {
+    if (L.deleted || L.id === 'main' || L.id === state.ledgerId) continue;
+    let cents = 0, n = 0;
+    for (const r of state.allRecords) {
+      if (r.deleted || r.mirror || r.date !== date || (r.ledgerId || 'main') !== L.id) continue;
+      if (r.type === 'expense') cents += r.amount;
+      n++;
+    }
+    if (n) out.push({ L, cents, n });
+  }
+  return out;
+}
+
+function xrefHtml(date) {
+  return ledgerDaySummary(date).map((x) =>
+    `<div class="xref" data-xref="${esc(x.L.id)}" data-xdate="${esc(date)}">${esc(x.L.icon)} ${esc(x.L.name)} 当天 ¥${fmt(x.cents)} · ${x.n} 笔 →</div>`).join('');
+}
+
+function bindXref(view) {
+  view.querySelectorAll('.xref').forEach((el) => {
+    el.onclick = () => { sfx('tap'); jumpToLedger(el.dataset.xref, el.dataset.xdate); };
+  });
+}
+
 function ensureHuizongCat() {
   if (!state.allCategories.some((c) => c.id === SYS_HUIZONG.id)) {
     state.allCategories.push(Object.assign({}, SYS_HUIZONG, { updatedAt: Date.now(), deleted: false }));
@@ -491,8 +518,10 @@ function renderAdd() {
         <div class="dp-sum">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</div>
       </div>
       <button class="btn-primary" id="btn-day-add" style="margin:2px 0 12px">✏️ 记一笔</button>
+      ${xrefHtml(state.selDate)}
       ${rows || '<div class="dp-empty">这天还没有记录</div>'}
     </div>`;
+  bindXref(view);
   view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
     el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); render(); };
   });
@@ -799,7 +828,8 @@ function renderList() {
     for (const r of list) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
     html += `<div class="day-group">
       <div class="day-head${ms ? ' dayhead-act' : ''}" data-dayall="${esc(date)}"><span>${dayLabel(date)}</span>
-        <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
+        <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>
+      ${ms ? '' : xrefHtml(date)}`;
     for (const r of list) {
       const link = findLedgerLink(r);
       const isMirror = !!r.mirror;
@@ -843,6 +873,7 @@ function renderList() {
     view.querySelector('#mb-go').onclick = applyMove;
     view.querySelector('#mb-del').onclick = applyBatchDelete;
   } else {
+    bindXref(view);
     view.querySelectorAll('.rrow').forEach((el) => {
       el.onclick = () => {
         const r = state.records.find((x) => x.id === el.dataset.id);
@@ -1130,7 +1161,7 @@ function exportCsv() {
   sfx('save');
 }
 
-const APP_VER = 'v25 · 2026-11-26';
+const APP_VER = 'v26 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1163,12 +1194,6 @@ function renderSettings() {
              <b>都不行？</b>直接下载 <a href="./jizhang.apk">安卓 APK 安装包</a>，装完就是独立 App。<br>
              微信里点开的链接请先选「在浏览器打开」。
            </div>`}
-    </div>
-    <div class="card">
-      <div class="chart-title">小账本汇总</div>
-      <div class="frow"><span class="fk" style="width:auto;flex:1">每日汇总进主账本</span>
-        <button class="mini" id="mirror-toggle">${settings.mirror ? '已开启' : '已关闭'}</button></div>
-      <div class="set-help">开启后，小账本每天的支出会在主账本当天生成一条"🗂️ 活动汇总"（点它跳回小账本看细账）；主账本里备注提到某小账本（如"日本""星邱"）的记录也会带跳转标记。主账本因此=日常+活动的完整全貌。</div>
     </div>
     <div class="card">
       <div class="chart-title">交互体验</div>
@@ -1241,14 +1266,6 @@ function renderSettings() {
     try { await deferredPrompt.userChoice; } catch (e) { /* ignore */ }
     deferredPrompt = null;
     render();
-  };
-  view.querySelector('#mirror-toggle').onclick = () => {
-    settings.mirror = !settings.mirror;
-    saveSettings();
-    if (settings.mirror) rebuildMirrors(); else clearMirrors();
-    reload();
-    scheduleSync();
-    toast(settings.mirror ? '已开启每日汇总' : '已关闭并清除汇总记录');
   };
   const snd = view.querySelector('#sound-toggle');
   if (snd) snd.onclick = () => {
@@ -1357,7 +1374,7 @@ window.addEventListener('appinstalled', () => {
       dirty = true;
     }
     if (dirty) persist();
-    if (rebuildMirrors()) scheduleSync();
+    if (settings.mirror) { if (rebuildMirrors()) scheduleSync(); } else { clearMirrors(); }
     reload();
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
