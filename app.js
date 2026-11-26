@@ -89,6 +89,7 @@ const state = {
   dayFilter: null,
   selDate: todayStr(),
   showForm: false,
+  gameSel: null,
   dayIdx: null,
   multiSel: false,
   selected: new Set(),
@@ -108,14 +109,20 @@ function reload() {
   state.allCategories = d.categories;
   state.allLedgers = d.ledgers;
   state.ledgers = state.allLedgers.filter((L) => !L.deleted);
-  if (!state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
+  if (state.ledgerId !== VIRTUAL_GAMES && !state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
   state.categories = state.allCategories.filter((c) => !c.deleted);
   state.dayIdx = buildLedgerDayIndex();
   const month = state.month, lid = state.ledgerId;
-  const main = lid === 'main';
-  state.records = state.allRecords
-    .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && (!main || r.date.startsWith(month)))
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
+  if (lid === VIRTUAL_GAMES) {
+    state.records = state.allRecords
+      .filter((r) => !r.deleted && (r.ledgerId || 'main') === 'main' && r.catId === GAME_CAT_ID && r.type === 'expense')
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
+  } else {
+    const main = lid === 'main';
+    state.records = state.allRecords
+      .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && (!main || r.date.startsWith(month)))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
+  }
   computeStats();
   render();
 }
@@ -302,11 +309,12 @@ function setNum(el, cents) {
 /* ---------------- 顶栏 + 结余卡 ---------------- */
 function renderHeader() {
   const main = state.ledgerId === 'main';
+  const virtual = state.ledgerId === VIRTUAL_GAMES;
   $('#month-label').textContent = main ? monthLabel(state.month) : '全部时间';
   $('#prev-month').style.display = main ? '' : 'none';
   $('#next-month').style.display = main ? '' : 'none';
   $('#this-month').style.display = main ? '' : 'none';
-  $('.hero-k').textContent = main ? '本月支出' : '总支出';
+  $('.hero-k').textContent = main ? '本月支出' : (virtual ? '游戏总支出' : '总支出');
   const s = state.stats;
   setNum($('#sum-expense'), s.expense);
   setNum($('#sum-income'), s.income);
@@ -316,15 +324,43 @@ function renderHeader() {
   updateSyncChip();
 }
 
+/* ---------------- 游戏虚拟账本 ---------------- */
+const VIRTUAL_GAMES = 'virtual-games';
+const GAME_CAT_ID = 'imp-cat-游戏';
+const GAMES = ['王者荣耀', '蛋仔派对', '桃源深处有人家', '宝可梦', '原神', '星穹铁道', '鸣潮',
+  '第五人格', '光遇', '金铲铲', '和平精英', '我的世界', '明日方舟', '阴阳师', '永劫无间', '三角洲'];
+function gameOf(r) {
+  const n = r.note || '';
+  for (const g of GAMES) { if (n.includes(g)) return g; }
+  return '未标注';
+}
+function gameGroups() {
+  const m = new Map();
+  for (const r of state.records) {
+    const g = gameOf(r);
+    const e = m.get(g) || { name: g, amount: 0, count: 0 };
+    e.amount += r.amount; e.count += 1; m.set(g, e);
+  }
+  return Array.from(m.values()).sort((a, b) => b.amount - a.amount);
+}
+function gameCardHtml(g) {
+  return `<div class="rrow" data-game="${esc(g.name)}">
+    <span class="rico">🎮</span>
+    <span class="rmid"><div class="rname">${esc(g.name)}</div><div class="rnote">${g.count} 笔</div></span>
+    <span class="ramt expense">¥${fmt(g.amount)}</span>
+  </div>`;
+}
+
 /* ---------------- 账本切换 ---------------- */
 function renderLedgers() {
   const el = $('#ledger-row');
   if (!el) return;
   el.innerHTML = state.ledgers.map((L) => `
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('') +
+    `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">🎮 游戏</button>` +
     `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
   el.querySelectorAll('[data-ledger]').forEach((b) => {
-    b.onclick = () => { state.ledgerId = b.dataset.ledger; sfx('tap'); buzz(8); reload(); };
+    b.onclick = () => { state.ledgerId = b.dataset.ledger; state.gameSel = null; sfx('tap'); buzz(8); reload(); };
   });
   el.querySelector('#btn-add-ledger').onclick = addLedger;
 }
@@ -555,6 +591,20 @@ let catsExpanded = false;
 function renderAdd() {
   const view = $('#view');
   if (state.showForm) { renderForm(view); return; }
+  if (state.ledgerId === VIRTUAL_GAMES) {
+    const gs = gameGroups();
+    view.innerHTML = `
+      <div class="card">
+        <div class="chart-title">游戏账本 · 实时汇总主账本的"游戏"支出</div>
+        <button class="btn-primary" id="btn-day-add" style="margin:2px 0 12px">✏️ 记一笔游戏开销</button>
+        ${gs.map(gameCardHtml).join('') || '<div class="dp-empty">还没有游戏开销</div>'}
+      </div>`;
+    view.querySelector('#btn-day-add').onclick = () => openForm(null);
+    view.querySelectorAll('[data-game]').forEach((el) => {
+      el.onclick = () => { sfx('tap'); state.gameSel = el.dataset.game; state.tab = 'list'; render(); };
+    });
+    return;
+  }
   const lid = state.ledgerId;
   const dayRecs = state.allRecords
     .filter((r) => !r.deleted && (r.ledgerId || 'main') === lid && r.date === state.selDate)
@@ -621,10 +671,15 @@ function openForm(rec) {
   if (rec) {
     state.form = {
       type: rec.type, categoryId: rec.catId, amount: String(rec.amount / 100),
-      note: rec.note || '', date: rec.date, editingId: rec.id,
+      note: rec.note || '', date: rec.date, editingId: rec.id, game: '',
+    };
+  } else if (state.ledgerId === VIRTUAL_GAMES) {
+    state.form = {
+      type: 'expense', categoryId: GAME_CAT_ID, amount: '', note: '', date: todayStr(), editingId: null,
+      game: state.gameSel && state.gameSel !== '未标注' ? state.gameSel : '',
     };
   } else {
-    state.form = { type: 'expense', categoryId: null, amount: '', note: '', date: state.selDate, editingId: null };
+    state.form = { type: 'expense', categoryId: null, amount: '', note: '', date: state.selDate, editingId: null, game: '' };
   }
   render();
 }
@@ -646,6 +701,8 @@ function renderForm(view) {
         <button data-type="expense" class="${f.type === 'expense' ? 'on' : ''}">支出</button>
         <button data-type="income" class="${f.type === 'income' ? 'on' : ''}">收入</button>
       </div>
+      ${state.ledgerId === VIRTUAL_GAMES && !editing ? `
+      <div class="frow"><span class="fk">游戏</span><button class="exp-btn" id="f-game">${esc(f.game || '选哪个游戏')} ▾</button></div>` : ''}
       <div class="amount-row">
         <span class="yen">¥</span>
         <input id="amount" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${esc(f.amount)}" autofocus>
@@ -694,6 +751,19 @@ function renderForm(view) {
   view.querySelector('#f-date').onchange = (e) => { f.date = e.target.value; };
   view.querySelector('#f-note').oninput = (e) => { f.note = e.target.value; };
   view.querySelector('#btn-save').onclick = saveRecord;
+  const fg = view.querySelector('#f-game');
+  if (fg) fg.onclick = () => {
+    const opts = GAMES.map((g) => ({ id: g, label: '🎮 ' + g })).concat([{ id: '__custom', label: '✏️ 其他（手动输入）' }]);
+    openSheet('哪个游戏', opts, f.game, (id) => {
+      if (id === '__custom') {
+        const g = prompt('游戏名称：');
+        f.game = g && g.trim() ? g.trim().slice(0, 10) : '';
+      } else {
+        f.game = id;
+      }
+      fg.textContent = (f.game || '选哪个游戏') + ' ▾';
+    });
+  };
   if (editing) view.querySelector('#btn-del').onclick = deleteRecord;
 }
 
@@ -747,7 +817,12 @@ function saveRecord() {
       if (cur) Object.assign(cur, prev, { updatedAt: Date.now() });
     };
   } else {
-    const rec = Object.assign({ id: genId(), ledgerId: state.ledgerId, deleted: false }, data, { updatedAt: now });
+    if (state.ledgerId === VIRTUAL_GAMES) {
+      data.catId = GAME_CAT_ID; data.catName = '游戏'; data.catIcon = '🎮';
+      if (f.game) data.note = (data.note ? f.game + ' ' + data.note : f.game);
+    }
+    const lid = state.ledgerId === VIRTUAL_GAMES ? 'main' : state.ledgerId;
+    const rec = Object.assign({ id: genId(), ledgerId: lid, deleted: false }, data, { updatedAt: now });
     state.allRecords.push(rec);
     undo = () => {
       const cur = state.allRecords.find((r) => r.id === rec.id);
@@ -876,7 +951,20 @@ function renderList() {
   const view = $('#view');
   let recs = state.records;
   let filterBar = '';
-  if (state.dayFilter) {
+  if (state.ledgerId === VIRTUAL_GAMES && !state.gameSel) {
+    const gs = gameGroups();
+    const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
+    view.innerHTML = tools0 + `<div class="card list-card">${gs.map(gameCardHtml).join('') || '<div class="dp-empty">还没有游戏开销</div>'}</div>`;
+    bindMultiToggle(view);
+    view.querySelectorAll('[data-game]').forEach((el) => {
+      el.onclick = () => { sfx('tap'); state.gameSel = el.dataset.game; render(); };
+    });
+    return;
+  }
+  if (state.ledgerId === VIRTUAL_GAMES) {
+    recs = recs.filter((r) => gameOf(r) === state.gameSel);
+    filterBar = `<div class="day-filter"><span>🎮 ${esc(state.gameSel)}</span><button id="game-back">全部游戏 ✕</button></div>`;
+  } else if (state.dayFilter) {
     recs = recs.filter((r) => r.date === state.dayFilter);
     filterBar = `<div class="day-filter"><span>📅 ${dayLabel(state.dayFilter)}</span>
       <button id="clear-day">看全月 ✕</button></div>`;
@@ -927,6 +1015,8 @@ function renderList() {
   bindClearDay(view);
   bindMultiToggle(view);
   bindJLinks(view);
+  const gb = view.querySelector('#game-back');
+  if (gb) gb.onclick = () => { state.gameSel = null; render(); };
 
   if (ms) {
     view.querySelectorAll('.rrow').forEach((el) => {
@@ -1131,7 +1221,9 @@ function renderStats() {
   const view = $('#view');
   const s = state.stats;
   const main = state.ledgerId === 'main';
-  const expCats = s.byCategory.filter((c) => c.type === 'expense');
+  const expCats = state.ledgerId === VIRTUAL_GAMES
+    ? gameGroups().map((g) => ({ name: g.name, icon: '🎮', type: 'expense', amount: g.amount, count: g.count }))
+    : s.byCategory.filter((c) => c.type === 'expense');
   const incCats = s.byCategory.filter((c) => c.type === 'income');
   /* 配色：>=3% 的分类按序取色，更小的合并为灰色"其他"，避免彩虹图 */
   const colorOf = new Map();
@@ -1386,7 +1478,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v40 · 2026-11-26';
+const APP_VER = 'v41 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1552,6 +1644,7 @@ document.querySelectorAll('.tab').forEach((t) => {
     buzz(8);
     state.tab = t.dataset.tab;
     state.showForm = false;
+    state.gameSel = null;
     if (t.dataset.tab !== 'stats') state.dayFilter = null;
     state.multiSel = false;
     state.selected.clear();
