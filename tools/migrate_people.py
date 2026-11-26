@@ -19,7 +19,7 @@ PEOPLE = [
     {"id": "p-5", "name": "爸爸", "avatar": "🐻"},
     {"id": "p-6", "name": "妈妈", "avatar": "🌷"},
     {"id": "p-7", "name": "summer", "avatar": "☀️"},
-    {"id": "p-8", "name": "九玖", "avatar": "🎀"},
+    {"id": "p-8", "name": "九玖", "avatar": "🐏"},
 ]
 WHOIDS = {
     "imp-jp": ["p-1"],
