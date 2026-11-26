@@ -291,6 +291,10 @@ function renderAdd() {
   const view = $('#view');
   view.innerHTML = `
     <div class="card">
+      <div class="chart-title">日历总览 · 点某天选为记账日期</div>
+      ${calendarHtml(f.date)}
+    </div>
+    <div class="card">
       <div class="seg">
         <button data-type="expense" class="${f.type === 'expense' ? 'on' : ''}">支出</button>
         <button data-type="income" class="${f.type === 'income' ? 'on' : ''}">收入</button>
@@ -323,6 +327,9 @@ function renderAdd() {
         <button class="btn-primary" id="btn-save">保存</button>`}
     </div>`;
 
+  view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
+    el.onclick = () => { f.date = el.dataset.day; render(); };
+  });
   view.querySelectorAll('.seg button').forEach((b) => {
     b.onclick = () => { f.type = b.dataset.type; f.categoryId = null; render(); };
   });
@@ -478,7 +485,7 @@ function bindClearDay(view) {
 
 function fmtDay(cents) { return (cents / 100).toFixed(2); }
 
-function calendarHtml() {
+function calendarHtml(selectedDate) {
   const [y, m] = state.month.split('-').map(Number);
   const lead = new Date(y, m - 1, 1).getDay();
   const days = new Date(y, m, 0).getDate();
@@ -494,7 +501,7 @@ function calendarHtml() {
   for (let d = 1; d <= days; d++) {
     const ds = `${y}-${pad2(m)}-${pad2(d)}`;
     const t = byDate.get(ds);
-    const cls = 'cal-cell' + (t ? ' has' : '') + (ds === today ? ' today' : '');
+    const cls = 'cal-cell' + (t ? ' has' : '') + (ds === today ? ' today' : '') + (ds === selectedDate ? ' sel' : '');
     const amt = t
       ? `<span class="ce">${t.exp ? '-' + fmtDay(t.exp) : ''}</span><span class="ci">${t.inc ? '+' + fmtDay(t.inc) : ''}</span>`
       : '<span class="ce"></span><span class="ci"></span>';
@@ -618,7 +625,7 @@ function renderStats() {
   view.innerHTML = `
     ${main ? `<div class="card">
       <div class="chart-title">日历总览 · 点某天看当天明细</div>
-      ${calendarHtml()}
+      ${calendarHtml(state.dayFilter)}
     </div>` : ''}
     <div class="card">
       <div class="chart-title">支出分类占比</div>
