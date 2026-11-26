@@ -1324,6 +1324,8 @@ window.addEventListener('appinstalled', () => {
     if (lp) state.ledgerId = lp;
     const mp = qs.get('m');
     if (mp && /^\d{4}-\d{2}$/.test(mp)) state.month = mp;
+    const dp = qs.get('d');
+    if (dp && /^\d{4}-\d{2}-\d{2}$/.test(dp)) { state.selDate = dp; state.month = dp.slice(0, 7); }
     if (settings.token) {
       // 已配置同步：先拉云端账本，避免把示例分类播种进已有数据（防止复活）
       await doSync('boot');
