@@ -380,7 +380,7 @@ const SYS_HUIZONG = { id: 'sys-cat-huizong', name: '活动汇总', type: 'expens
 const LEDGER_KEYWORDS = {
   'imp-jp': ['日本'], 'imp-cx': ['川西'], 'imp-whqd': ['青岛', '威海'], 'imp-cs': ['长沙'],
   'imp-xn': ['咸宁'], 'imp-ly': ['洛阳'], 'imp-jd': ['景德镇'], 'imp-bday': ['生日'],
-  'imp-xq66': ['星邱'], 'imp-xq1121': ['星邱'],
+  'imp-xq66': ['星邱6.6', '星邱线下6.6'], 'imp-xq1121': ['星邱11.21', '星邱线下11.21'],
 };
 
 function ledgerKeywords(L) {
@@ -412,16 +412,18 @@ function findLedgerLink(r) {
     if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
   }
   if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense') {
-    /* 1) 备注关键词 */
+    /* 1) 备注关键词：最长匹配优先，避免"星邱"同时命中两个账本 */
     if (r.note) {
+      let best = null;
       for (const L of state.ledgers) {
         if (L.id === 'main') continue;
-        try {
-          if (new RegExp('(' + ledgerKeywords(L).map(escRe).join('|') + ')').test(r.note)) {
-            return { lid: L.id, date: null, label: '🔗 ' + L.name };
+        for (const kw of ledgerKeywords(L)) {
+          if (kw && r.note.includes(kw)) {
+            if (!best || kw.length > best.kw.length) best = { L, kw };
           }
-        } catch (e) { /* ignore */ }
+        }
       }
+      if (best) return { lid: best.L.id, date: null, label: '🔗 ' + best.L.name };
     }
     /* 2) 同一天：金额等于小账本当天合计 */
     if (state.dayIdx) {
@@ -1174,7 +1176,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v31 · 2026-11-26';
+const APP_VER = 'v32 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
