@@ -211,7 +211,7 @@ function renderHeader() {
   $('#prev-month').style.display = main ? '' : 'none';
   $('#next-month').style.display = main ? '' : 'none';
   $('#this-month').style.display = main ? '' : 'none';
-  $('.hero-k').textContent = main ? '本月结余' : '总结余';
+  $('.hero-k').textContent = main ? '本月支出' : '总支出';
   const s = state.stats;
   $('#sum-expense').textContent = '¥' + fmt(s.expense);
   $('#sum-income').textContent = '¥' + fmt(s.income);

@@ -80,6 +80,7 @@ body {
 .hero-cell .v { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .v.expense { color: var(--expense); }
 .v.income { color: var(--income); }
+.v.neg { color: var(--expense); }
 
 /* ---------- 主视图 ---------- */
 main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-inset-bottom)); }
