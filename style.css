@@ -309,7 +309,7 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
 .chart-title { font-size: 12.5px; color: var(--sub); margin: 0 0 14px; font-weight: 600; letter-spacing: .03em; }
 canvas { width: 100%; display: block; }
 .pie-wrap { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
-.pie-wrap canvas { align-self: center; flex: 0 0 140px; width: 140px; height: 140px; }
+.pie-wrap canvas { align-self: center; flex: none; }
 .legend { min-width: 0; }
 .legend-more {
   display: block; width: 100%; margin-top: 8px;

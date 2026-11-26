@@ -712,8 +712,8 @@ function setupCanvas(canvas, w, h) {
   return ctx;
 }
 
-function drawPie(ctx, slices, total) {
-  const cx = 70, cy = 70, R = 58, r = 34;
+function drawPie(ctx, slices, total, size) {
+  const cx = size / 2, cy = size / 2, R = size * 0.42, r = size * 0.245;
   let a = -Math.PI / 2;
   if (!slices.length) {
     ctx.fillStyle = '#f2f2ef';
@@ -734,10 +734,10 @@ function drawPie(ctx, slices, total) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#1b1d21';
   ctx.textAlign = 'center';
-  ctx.font = '500 10px sans-serif';
-  ctx.fillText('支出', cx, cy - 9);
-  ctx.font = '700 12px sans-serif';
-  ctx.fillText('¥' + fmt(total), cx, cy + 8);
+  ctx.font = `500 ${Math.round(size * 0.072)}px sans-serif`;
+  ctx.fillText('支出', cx, cy - size * 0.065);
+  ctx.font = `700 ${Math.round(size * 0.088)}px sans-serif`;
+  ctx.fillText('¥' + fmt(total), cx, cy + size * 0.06);
 }
 
 function drawBars(ctx, cols, W, H) {
@@ -849,9 +849,10 @@ function renderStats() {
   }
 
   const pie = view.querySelector('#pie');
-  const pctx = setupCanvas(pie, 140, 140);
+  const pieSize = Math.min(260, Math.max(200, (view.clientWidth || 360) - 100));
+  const pctx = setupCanvas(pie, pieSize, pieSize);
   const slices = expCats.map((c, i) => ({ value: c.amount, color: PALETTE[i % PALETTE.length] }));
-  drawPie(pctx, slices, s.expense);
+  drawPie(pctx, slices, s.expense, pieSize);
 
   const bars = view.querySelector('#bars');
   const W = Math.max(200, (view.clientWidth || 360) - 60);
