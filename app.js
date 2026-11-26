@@ -955,7 +955,8 @@ function renderSettings() {
       ${isStandalone
         ? '<div class="set-help">✓ 当前已作为 App 运行（桌面图标打开）</div>'
         : `<div class="set-help">
-             <b>Chrome / Edge（安卓）</b>：点页面顶部的「安装」按钮；或菜单 ⋮ → 「安装应用」。<br>
+             ${deferredPrompt ? '<button class="mini" id="btn-install-now" style="margin-bottom:8px">📲 一键安装成应用</button><br>' : ''}
+             <b>Chrome / Edge（安卓）</b>：菜单 ⋮ → 「安装应用」。<br>
              <b>QQ浏览器 / UC / 自带浏览器</b>：不支持一键安装，请用菜单 → 「添加至桌面」；想要真正的 App 体验建议装 Edge 或 Chrome。<br>
              <b>iPhone（Safari）</b>：底部分享按钮 → 「添加到主屏幕」。<br>
              <b>都不行？</b>直接下载 <a href="./jizhang.apk">安卓 APK 安装包</a>，装完就是独立 App。<br>
@@ -1021,6 +1022,14 @@ function renderSettings() {
   };
   view.querySelector('#btn-sync-now').onclick = () => doSync('manual');
   view.querySelector('#btn-export').onclick = exportCsv;
+  const inst = view.querySelector('#btn-install-now');
+  if (inst) inst.onclick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch (e) { /* ignore */ }
+    deferredPrompt = null;
+    render();
+  };
   view.querySelector('#mirror-toggle').onclick = () => {
     settings.mirror = !settings.mirror;
     saveSettings();
@@ -1073,40 +1082,16 @@ let deferredPrompt = null;
 const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
   || window.navigator.standalone === true
   || !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  showInstallBanner();
+  if (state.tab === 'set') render();
 });
 window.addEventListener('appinstalled', () => {
-  const b = $('#install-banner');
-  if (b) b.hidden = true;
+  deferredPrompt = null;
+  if (state.tab === 'set') render();
 });
-function showInstallBanner() {
-  const b = $('#install-banner');
-  if (!b || isStandalone) return;
-  if (localStorage.getItem('jizhang-install-dismissed') === '1') return;
-  if (!deferredPrompt && !isMobile) return;
-  b.hidden = false;
-  b.querySelector('#ib-install').onclick = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      try {
-        const r = await deferredPrompt.userChoice;
-        if (r.outcome === 'accepted') { b.hidden = true; return; }
-      } catch (e) { /* ignore */ }
-      deferredPrompt = null;
-    }
-    const help = b.querySelector('#ib-help');
-    if (help) help.hidden = false;
-  };
-  b.querySelector('#ib-dismiss').onclick = () => {
-    b.hidden = true;
-    localStorage.setItem('jizhang-install-dismissed', '1');
-  };
-}
 
 /* ---------------- 启动 ---------------- */
 (async function boot() {
@@ -1143,9 +1128,15 @@ function showInstallBanner() {
     if (dirty) persist();
     rebuildMirrors();
     reload();
-    showInstallBanner();
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
+      // 部署新版本后自动刷新页面，无需手动刷新
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded) return;
+        reloaded = true;
+        location.reload();
+      });
     }
   } catch (e) {
     toast('初始化失败：' + e.message, true);
