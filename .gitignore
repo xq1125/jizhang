@@ -3,7 +3,7 @@ __pycache__/
 data/
 lan/data/
 lan/backups/
-preview.png
+preview*.png
 dom.html
 dom1.html
 dom2.html
