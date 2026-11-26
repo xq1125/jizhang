@@ -506,6 +506,28 @@ function openSheet(title, options, curId, cb) {
   });
 }
 
+/* 两下式链接：第一下展开显示说明，第二下跳转 */
+function bindJLinks(view) {
+  view.querySelectorAll('.jlink').forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      if (el.classList.contains('open')) {
+        jumpToLedger(el.dataset.jump, el.dataset.jdate || null);
+        return;
+      }
+      view.querySelectorAll('.jlink.open').forEach((x) => { x.classList.remove('open'); x.textContent = '🔗'; });
+      el.classList.add('open');
+      el.textContent = el.dataset.jlabel;
+      sfx('tap');
+    };
+  });
+}
+
+function jlinkHtml(link) {
+  if (!link) return '';
+  return `<button class="jlink" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}" data-jlabel="${esc(link.label)}">🔗</button>`;
+}
+
 /* ---------------- 记一笔 ---------------- */
 const EXPAND_LIMIT = 10;
 let catsExpanded = false;
@@ -527,7 +549,7 @@ function renderAdd() {
       <span class="rmid"><div class="rname">${esc(r.catName)}</div>
         ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
       <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
-      ${link ? `<button class="jump-chip" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}">${esc(link.label)}</button>` : ''}
+      ${jlinkHtml(link)}
     </div>`;
   }
   view.innerHTML = `
@@ -547,6 +569,7 @@ function renderAdd() {
   view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
     el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); buzz(10); render(); };
   });
+  bindJLinks(view);
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
   view.querySelectorAll('.rrow').forEach((el) => {
     el.onclick = () => {
@@ -558,9 +581,6 @@ function renderAdd() {
       }
       openForm(r);
     };
-  });
-  view.querySelectorAll('.jump-chip').forEach((b) => {
-    b.onclick = (e) => { e.stopPropagation(); jumpToLedger(b.dataset.jump, b.dataset.jdate || null); };
   });
 }
 
@@ -864,7 +884,7 @@ function renderList() {
         <span class="rmid"><div class="rname">${esc(r.catName)}</div>
           ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
         <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
-        ${!ms && link ? `<button class="jump-chip" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}">${esc(link.label)}</button>` : ''}
+        ${!ms ? jlinkHtml(link) : ''}
       </div>`;
     }
     html += '</div>';
@@ -874,6 +894,7 @@ function renderList() {
   view.innerHTML = html;
   bindClearDay(view);
   bindMultiToggle(view);
+  bindJLinks(view);
 
   if (ms) {
     view.querySelectorAll('.rrow').forEach((el) => {
@@ -919,9 +940,6 @@ function renderList() {
         state.tab = 'add';
         openForm(r);
       };
-    });
-    view.querySelectorAll('.jump-chip').forEach((b) => {
-      b.onclick = (e) => { e.stopPropagation(); jumpToLedger(b.dataset.jump, b.dataset.jdate || null); };
     });
   }
 }
@@ -1227,7 +1245,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v35 · 2026-11-26';
+const APP_VER = 'v36 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
