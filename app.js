@@ -528,6 +528,26 @@ function jlinkHtml(link) {
   return `<button class="jlink" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}" data-jlabel="${esc(link.label)}">🔗</button>`;
 }
 
+/* 长按手势：550ms 触发，移动或提前抬手则取消 */
+let lpFired = false;
+function attachLongPress(el, cb) {
+  let timer = null;
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  el.addEventListener('touchstart', () => {
+    cancel();
+    timer = setTimeout(() => { timer = null; lpFired = true; buzz(15); sfx('tap'); cb(); }, 550);
+  }, { passive: true });
+  el.addEventListener('touchmove', cancel, { passive: true });
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchcancel', cancel);
+  el.addEventListener('mousedown', () => {
+    cancel();
+    timer = setTimeout(() => { timer = null; lpFired = true; cb(); }, 650);
+  });
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+}
+
 /* ---------------- 记一笔 ---------------- */
 const EXPAND_LIMIT = 10;
 let catsExpanded = false;
@@ -573,6 +593,7 @@ function renderAdd() {
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
   view.querySelectorAll('.rrow').forEach((el) => {
     el.onclick = () => {
+      if (lpFired) { lpFired = false; return; }
       const r = dayRecs.find((x) => x.id === el.dataset.id);
       if (!r) return;
       if (r.mirror) {
@@ -581,6 +602,17 @@ function renderAdd() {
       }
       openForm(r);
     };
+    const r0 = dayRecs.find((x) => x.id === el.dataset.id);
+    if (r0 && !r0.mirror) {
+      attachLongPress(el, () => {
+        state.dayFilter = state.selDate;
+        state.multiSel = true;
+        state.selected.clear();
+        state.selected.add(el.dataset.id);
+        state.tab = 'list';
+        render();
+      });
+    }
   });
 }
 
@@ -852,7 +884,7 @@ function renderList() {
   const ms = state.multiSel;
   const tools = `<div class="list-tools">
       <button class="mini" id="btn-multi">${ms ? '✕ 退出多选' : '☑ 多选移动'}</button>
-      ${ms ? '<span class="lt-hint">勾选记录，底部统一改日期/账本；点日期头全选当天</span>' : ''}
+      ${ms ? '<span class="lt-hint">勾选记录，底部统一改日期/账本；点日期头全选当天</span>' : '<span class="lt-hint">长按记录可多选</span>'}
     </div>`;
   if (!recs.length) {
     view.innerHTML = tools + filterBar + `<div class="empty"><span class="big">🗒️</span>${
@@ -899,6 +931,7 @@ function renderList() {
   if (ms) {
     view.querySelectorAll('.rrow').forEach((el) => {
       el.onclick = () => {
+        if (lpFired) { lpFired = false; return; }
         if (el.dataset.mirror) return;
         const id = el.dataset.id;
         if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
@@ -930,6 +963,7 @@ function renderList() {
     bindXref(view);
     view.querySelectorAll('.rrow').forEach((el) => {
       el.onclick = () => {
+        if (lpFired) { lpFired = false; return; }
         const r = state.records.find((x) => x.id === el.dataset.id);
         if (!r) return;
         if (r.mirror) {
@@ -940,6 +974,15 @@ function renderList() {
         state.tab = 'add';
         openForm(r);
       };
+      const r0 = state.records.find((x) => x.id === el.dataset.id);
+      if (r0 && !r0.mirror) {
+        attachLongPress(el, () => {
+          state.multiSel = true;
+          state.selected.clear();
+          state.selected.add(el.dataset.id);
+          render();
+        });
+      }
     });
   }
 }
