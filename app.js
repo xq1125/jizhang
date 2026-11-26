@@ -66,6 +66,7 @@ function loadSettings() {
   s.deviceId = s.deviceId || ('dev-' + Math.random().toString(36).slice(2, 8));
   s.lastSync = s.lastSync || 0;
   s.lastError = s.lastError || '';
+  s.mirror = s.mirror === undefined ? true : !!s.mirror;
   return s;
 }
 function saveSettings() { localStorage.setItem(LS_SET, JSON.stringify(settings)); }
@@ -174,6 +175,7 @@ async function doSync(kind) {
     state.allCategories = res.categories;
     state.allLedgers = res.ledgers || [];
     persist();
+    rebuildMirrors();
     reload();
     if (kind === 'manual') toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓');
   } catch (e) {
@@ -242,6 +244,7 @@ function addLedger() {
   state.allLedgers.push(L);
   if (!persist()) return;
   state.ledgerId = L.id;
+  rebuildMirrors();
   reload();
   scheduleSync();
   toast(`已创建账本「${L.name}」`);
@@ -255,6 +258,7 @@ function renameLedger(id) {
   L.name = name.trim().slice(0, 12);
   L.updatedAt = Date.now();
   persist();
+  rebuildMirrors();
   reload();
   scheduleSync();
   toast('已重命名');
@@ -272,9 +276,101 @@ function deleteLedger(id) {
   }
   if (state.ledgerId === id) state.ledgerId = 'main';
   persist();
+  rebuildMirrors();
   reload();
   scheduleSync();
   toast('已删除账本');
+}
+
+/* ---------------- 小账本每日汇总（镜像进主账本） ---------------- */
+const SYS_HUIZONG = { id: 'sys-cat-huizong', name: '活动汇总', type: 'expense', icon: '🗂️' };
+const LEDGER_KEYWORDS = {
+  'imp-jp': ['日本'], 'imp-cx': ['川西'], 'imp-whqd': ['青岛', '威海'], 'imp-cs': ['长沙'],
+  'imp-xn': ['咸宁'], 'imp-ly': ['洛阳'], 'imp-jd': ['景德镇'], 'imp-bday': ['生日'],
+  'imp-xq66': ['星邱'], 'imp-xq1121': ['星邱'],
+};
+
+function ledgerKeywords(L) {
+  return LEDGER_KEYWORDS[L.id] || [L.name];
+}
+
+function escRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function findLedgerLink(r) {
+  if (r.mirror && r.mirror.ledgerId) {
+    const L = state.allLedgers.find((x) => x.id === r.mirror.ledgerId && !x.deleted);
+    if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
+  }
+  if (state.ledgerId === 'main' && r.note) {
+    for (const L of state.ledgers) {
+      if (L.id === 'main') continue;
+      try {
+        if (new RegExp('(' + ledgerKeywords(L).map(escRe).join('|') + ')').test(r.note)) {
+          return { lid: L.id, date: null, label: '🔗 ' + L.name };
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+  return null;
+}
+
+function jumpToLedger(lid, date) {
+  state.ledgerId = lid;
+  state.dayFilter = date || null;
+  state.tab = 'list';
+  reload();
+}
+
+function ensureHuizongCat() {
+  if (!state.allCategories.some((c) => c.id === SYS_HUIZONG.id)) {
+    state.allCategories.push(Object.assign({}, SYS_HUIZONG, { updatedAt: Date.now(), deleted: false }));
+  }
+}
+
+function rebuildMirrors() {
+  if (!settings.mirror) return false;
+  ensureHuizongCat();
+  const now = Date.now();
+  const want = new Map();
+  for (const L of state.allLedgers.filter((x) => !x.deleted && x.id !== 'main')) {
+    const byDate = new Map();
+    for (const r of state.allRecords) {
+      if (r.deleted || r.mirror || (r.ledgerId || 'main') !== L.id || r.type !== 'expense') continue;
+      byDate.set(r.date, (byDate.get(r.date) || 0) + r.amount);
+    }
+    for (const [date, cents] of byDate) {
+      want.set('mirror-' + L.id + '-' + date, { cents, date, name: L.name, lid: L.id });
+    }
+  }
+  let changed = false;
+  const byId = new Map(state.allRecords.map((r) => [r.id, r]));
+  for (const [mid, w] of want) {
+    const rec = {
+      id: mid, ledgerId: 'main', type: 'expense', amount: w.cents,
+      catId: SYS_HUIZONG.id, catName: SYS_HUIZONG.name, catIcon: SYS_HUIZONG.icon,
+      date: w.date, note: `「${w.name}」当日汇总`, updatedAt: now, deleted: false,
+      mirror: { ledgerId: w.lid, date: w.date },
+    };
+    const ex = byId.get(mid);
+    if (!ex || ex.deleted || ex.amount !== w.cents || ex.note !== rec.note) {
+      if (ex) Object.assign(ex, rec); else state.allRecords.push(rec);
+      changed = true;
+    }
+  }
+  for (const r of state.allRecords) {
+    if (r.mirror && !r.deleted && !want.has(r.id)) { r.deleted = true; r.updatedAt = now; changed = true; }
+  }
+  if (changed) persist();
+  return changed;
+}
+
+function clearMirrors() {
+  let changed = false;
+  const now = Date.now();
+  for (const r of state.allRecords) {
+    if (r.mirror && !r.deleted) { r.deleted = true; r.updatedAt = now; changed = true; }
+  }
+  if (changed) persist();
 }
 
 /* ---------------- 记一笔 ---------------- */
@@ -283,7 +379,7 @@ let catsExpanded = false;
 
 function renderAdd() {
   const f = state.form;
-  const cats = state.categories.filter((c) => c.type === f.type);
+  const cats = state.categories.filter((c) => c.type === f.type && c.id !== SYS_HUIZONG.id);
   if (f.categoryId && cats.findIndex((c) => c.id === f.categoryId) >= EXPAND_LIMIT) catsExpanded = true;
   const collapsible = cats.length > EXPAND_LIMIT;
   const shown = (collapsible && !catsExpanded) ? cats.slice(0, EXPAND_LIMIT) : cats;
@@ -398,6 +494,7 @@ function saveRecord() {
     toast('已记一笔 ✓');
   }
   if (!persist()) return;
+  rebuildMirrors();
   resetForm();
   reload();
   scheduleSync();
@@ -416,6 +513,7 @@ function deleteRecord() {
   toast('已删除');
   resetForm();
   state.tab = 'list';
+  rebuildMirrors();
   reload();
   scheduleSync();
 }
@@ -451,11 +549,13 @@ function renderList() {
       <div class="day-head"><span>${dayLabel(date)}</span>
         <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
     for (const r of list) {
+      const link = findLedgerLink(r);
       html += `<div class="rrow" data-id="${esc(r.id)}">
         <span class="rico">${esc(r.catIcon)}</span>
         <span class="rmid"><div class="rname">${esc(r.catName)}</div>
           ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
         <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
+        ${link ? `<button class="jump-chip" data-jump="${esc(link.lid)}" data-jdate="${esc(link.date || '')}">${esc(link.label)}</button>` : ''}
       </div>`;
     }
     html += '</div>';
@@ -467,6 +567,10 @@ function renderList() {
     el.onclick = () => {
       const r = state.records.find((x) => x.id === el.dataset.id);
       if (!r) return;
+      if (r.mirror) {
+        const link = findLedgerLink(r);
+        if (link) { jumpToLedger(link.lid, link.date); return; }
+      }
       state.form = {
         type: r.type, categoryId: r.catId, amount: String(r.amount / 100),
         note: r.note || '', date: r.date, editingId: r.id,
@@ -474,6 +578,9 @@ function renderList() {
       state.tab = 'add';
       render();
     };
+  });
+  view.querySelectorAll('.jump-chip').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); jumpToLedger(b.dataset.jump, b.dataset.jdate || null); };
   });
 }
 
@@ -773,6 +880,12 @@ function renderSettings() {
            </div>`}
     </div>
     <div class="card">
+      <div class="chart-title">小账本汇总</div>
+      <div class="frow"><span class="fk" style="width:auto;flex:1">每日汇总进主账本</span>
+        <button class="mini" id="mirror-toggle">${settings.mirror ? '已开启' : '已关闭'}</button></div>
+      <div class="set-help">开启后，小账本每天的支出会在主账本当天生成一条"🗂️ 活动汇总"（点它跳回小账本看细账）；主账本里备注提到某小账本（如"日本""星邱"）的记录也会带跳转标记。主账本因此=日常+活动的完整全貌。</div>
+    </div>
+    <div class="card">
       <div class="chart-title">账本管理</div>
       ${ledgerRows}
     </div>
@@ -825,6 +938,14 @@ function renderSettings() {
   };
   view.querySelector('#btn-sync-now').onclick = () => doSync('manual');
   view.querySelector('#btn-export').onclick = exportCsv;
+  view.querySelector('#mirror-toggle').onclick = () => {
+    settings.mirror = !settings.mirror;
+    saveSettings();
+    if (settings.mirror) rebuildMirrors(); else clearMirrors();
+    reload();
+    scheduleSync();
+    toast(settings.mirror ? '已开启每日汇总' : '已关闭并清除汇总记录');
+  };
   view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
   view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
 }
@@ -909,8 +1030,11 @@ function showInstallBanner() {
     state.allLedgers = d0.ledgers;
     const h = location.hash.replace('#', '');
     if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
-    const lp = new URLSearchParams(location.search).get('l');
+    const qs = new URLSearchParams(location.search);
+    const lp = qs.get('l');
     if (lp) state.ledgerId = lp;
+    const mp = qs.get('m');
+    if (mp && /^\d{4}-\d{2}$/.test(mp)) state.month = mp;
     if (settings.token) {
       // 已配置同步：先拉云端账本，避免把示例分类播种进已有数据（防止复活）
       await doSync('boot');
@@ -928,6 +1052,7 @@ function showInstallBanner() {
       dirty = true;
     }
     if (dirty) persist();
+    rebuildMirrors();
     reload();
     showInstallBanner();
     if ('serviceWorker' in navigator && window.isSecureContext) {
