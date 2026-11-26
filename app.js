@@ -203,7 +203,6 @@ async function doSync(kind) {
     state.allCategories = res.categories;
     state.allLedgers = res.ledgers || [];
     persist();
-    if (settings.mirror) { if (rebuildMirrors()) scheduleSync(); }
     reload();
     if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); }
   } catch (e) {
@@ -438,40 +437,8 @@ function ensureHuizongCat() {
 }
 
 function rebuildMirrors() {
-  if (!settings.mirror) return false;
-  ensureHuizongCat();
-  const now = Date.now();
-  const want = new Map();
-  for (const L of state.allLedgers.filter((x) => !x.deleted && x.id !== 'main')) {
-    const byDate = new Map();
-    for (const r of state.allRecords) {
-      if (r.deleted || r.mirror || (r.ledgerId || 'main') !== L.id || r.type !== 'expense') continue;
-      byDate.set(r.date, (byDate.get(r.date) || 0) + r.amount);
-    }
-    for (const [date, cents] of byDate) {
-      want.set('mirror-' + L.id + '-' + date, { cents, date, name: L.name, lid: L.id });
-    }
-  }
-  let changed = false;
-  const byId = new Map(state.allRecords.map((r) => [r.id, r]));
-  for (const [mid, w] of want) {
-    const rec = {
-      id: mid, ledgerId: 'main', type: 'expense', amount: w.cents,
-      catId: SYS_HUIZONG.id, catName: SYS_HUIZONG.name, catIcon: SYS_HUIZONG.icon,
-      date: w.date, note: `「${w.name}」当日汇总`, updatedAt: now, deleted: false,
-      mirror: { ledgerId: w.lid, date: w.date },
-    };
-    const ex = byId.get(mid);
-    if (!ex || ex.deleted || ex.amount !== w.cents || ex.note !== rec.note) {
-      if (ex) Object.assign(ex, rec); else state.allRecords.push(rec);
-      changed = true;
-    }
-  }
-  for (const r of state.allRecords) {
-    if (r.mirror && !r.deleted && !want.has(r.id)) { r.deleted = true; r.updatedAt = now; changed = true; }
-  }
-  if (changed) persist();
-  return changed;
+  // 汇总镜像功能已移除：主账本只保留你自己记的账，对照靠 xref 跳转行
+  return false;
 }
 
 function clearMirrors() {
@@ -1161,7 +1128,7 @@ function exportCsv() {
   sfx('save');
 }
 
-const APP_VER = 'v26 · 2026-11-26';
+const APP_VER = 'v27 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1374,7 +1341,7 @@ window.addEventListener('appinstalled', () => {
       dirty = true;
     }
     if (dirty) persist();
-    if (settings.mirror) { if (rebuildMirrors()) scheduleSync(); } else { clearMirrors(); }
+    clearMirrors();
     reload();
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
