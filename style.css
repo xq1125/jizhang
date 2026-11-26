@@ -385,7 +385,13 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
 
 /* ---------- 统计 ---------- */
 .chart-title { font-size: 12.5px; color: var(--sub); margin: 0 0 14px; font-weight: 600; letter-spacing: .03em; }
-canvas { width: 100%; display: block; }
+canvas { width: 100%; display: block; touch-action: none; }
+.chart-tip {
+  position: absolute; z-index: 5; transform: translate(-50%, -100%);
+  background: var(--ink); color: #fff; font-size: 11px; padding: 5px 10px;
+  border-radius: 8px; white-space: nowrap; pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
 .pie-wrap { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
 .pie-wrap canvas { align-self: center; flex: none; }
 .legend { min-width: 0; }

@@ -1029,21 +1029,25 @@ function drawPie(ctx, slices, total, size) {
   ctx.fillText('¥' + fmt(total), cx, cy + size * 0.06);
 }
 
-function drawBars(ctx, cols, W, H) {
+function drawBars(ctx, cols, W, H, hoverIdx) {
   const padL = 6, padR = 6, padT = 12, padB = 20;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const n = Math.max(1, cols.length);
   let max = 0;
   for (const c of cols) max = Math.max(max, c.exp || 0, c.inc || 0);
   if (max <= 0) max = 1;
+  const slot = plotW / n;
+  if (hoverIdx >= 0 && hoverIdx < cols.length) {
+    ctx.fillStyle = 'rgba(136, 136, 208, 0.13)';
+    ctx.fillRect(padL + slot * hoverIdx, padT - 4, slot, plotH + 4);
+  }
   ctx.strokeStyle = '#f0efec';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 2; i++) {
     const y = padT + (plotH * i) / 2;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
   }
-  const slot = plotW / n;
-  const bw = Math.max(2, Math.min(6, slot * 0.3));
+  const bw = Math.max(3, Math.min(10, slot * 0.42));
   const round = (x, y, w, h, rad) => {
     if (h <= 0) return;
     rad = Math.min(rad, w / 2, h);
@@ -1134,8 +1138,8 @@ function renderStats() {
 
   let cols;
   if (main) {
-    const [y, m] = state.month.split('-').map(Number);
-    const days = new Date(y, m, 0).getDate();
+    const [y2, m2] = state.month.split('-').map(Number);
+    const days = new Date(y2, m2, 0).getDate();
     const expByDay = {}, incByDay = {};
     for (const d of s.daily) {
       const day = Number(d.date.slice(8, 10));
@@ -1143,11 +1147,11 @@ function renderStats() {
     }
     cols = [];
     for (let d = 1; d <= days; d++) {
-      cols.push({ label: String(d), exp: expByDay[d] || 0, inc: incByDay[d] || 0, tick: d === 1 || d % 5 === 0 || d === days });
+      cols.push({ label: String(d), tipDate: `${m2}月${d}日`, exp: expByDay[d] || 0, inc: incByDay[d] || 0, tick: d === 1 || d % 5 === 0 || d === days });
     }
   } else {
-    cols = s.byMonth.map((b) => ({ label: Number(b.month.slice(5)) + '月', exp: b.expense, inc: b.income, tick: true }));
-    if (!cols.length) cols = [{ label: '', exp: 0, inc: 0, tick: false }];
+    cols = s.byMonth.map((b) => ({ label: Number(b.month.slice(5)) + '月', tipDate: Number(b.month.slice(5)) + '月', exp: b.expense, inc: b.income, tick: true }));
+    if (!cols.length) cols = [{ label: '', tipDate: '', exp: 0, inc: 0, tick: false }];
   }
 
   const pie = view.querySelector('#pie');
@@ -1158,7 +1162,43 @@ function renderStats() {
   const bars = view.querySelector('#bars');
   const W = Math.max(200, (view.clientWidth || 360) - 60);
   const bctx = setupCanvas(bars, W, 170);
-  drawBars(bctx, cols, W, 170);
+  let hoverIdx = -1;
+  const redraw = () => {
+    bctx.clearRect(0, 0, W, 170);
+    drawBars(bctx, cols, W, 170, hoverIdx);
+  };
+  redraw();
+
+  /* 手指/鼠标滑动查看当天金额 */
+  const tip = document.createElement('div');
+  tip.className = 'chart-tip';
+  tip.hidden = true;
+  const host = bars.parentElement;
+  host.style.position = 'relative';
+  host.appendChild(tip);
+  const hideTip = () => {
+    tip.hidden = true;
+    if (hoverIdx !== -1) { hoverIdx = -1; redraw(); }
+  };
+  const moveTip = (clientX) => {
+    const rect = bars.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const slot = (rect.width - 12) / cols.length;
+    const idx = Math.floor((x - 6) / slot);
+    if (idx < 0 || idx >= cols.length) { hideTip(); return; }
+    if (idx !== hoverIdx) { hoverIdx = idx; redraw(); }
+    const c = cols[idx];
+    tip.textContent = `${c.tipDate}　支出 ¥${(c.exp / 100).toFixed(2)}${c.inc ? `　收入 ¥${(c.inc / 100).toFixed(2)}` : ''}`;
+    const lx = Math.min(Math.max(6 + slot * (idx + 0.5), 70), rect.width - 70);
+    tip.style.left = (bars.offsetLeft + lx) + 'px';
+    tip.style.top = (bars.offsetTop + 2) + 'px';
+    tip.hidden = false;
+  };
+  bars.addEventListener('mousemove', (e) => moveTip(e.clientX));
+  bars.addEventListener('mouseleave', hideTip);
+  bars.addEventListener('touchstart', (e) => { e.preventDefault(); moveTip(e.touches[0].clientX); }, { passive: false });
+  bars.addEventListener('touchmove', (e) => { e.preventDefault(); moveTip(e.touches[0].clientX); }, { passive: false });
+  bars.addEventListener('touchend', hideTip);
 
   view.querySelectorAll('[data-legend]').forEach((b) => {
     b.onclick = () => { legendState[b.dataset.legend] = !legendState[b.dataset.legend]; renderStats(); };
