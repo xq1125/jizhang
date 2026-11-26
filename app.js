@@ -201,7 +201,7 @@ async function doSync(kind) {
     state.allCategories = res.categories;
     state.allLedgers = res.ledgers || [];
     persist();
-    rebuildMirrors();
+    if (rebuildMirrors()) scheduleSync();
     reload();
     if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); }
   } catch (e) {
@@ -1277,7 +1277,7 @@ window.addEventListener('appinstalled', () => {
       dirty = true;
     }
     if (dirty) persist();
-    rebuildMirrors();
+    if (rebuildMirrors()) scheduleSync();
     reload();
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
