@@ -109,13 +109,19 @@ function reload() {
   state.allCategories = d.categories;
   state.allLedgers = d.ledgers;
   state.ledgers = state.allLedgers.filter((L) => !L.deleted);
-  if (state.ledgerId !== VIRTUAL_GAMES && !state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
+  if (state.ledgerId !== VIRTUAL_GAMES && state.ledgerId !== VIRTUAL_TRAVELS
+    && !state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
   state.categories = state.allCategories.filter((c) => !c.deleted);
   state.dayIdx = buildLedgerDayIndex();
   const month = state.month, lid = state.ledgerId;
   if (lid === VIRTUAL_GAMES) {
     state.records = state.allRecords
       .filter((r) => !r.deleted && (r.ledgerId || 'main') === 'main' && r.catId === GAME_CAT_ID && r.type === 'expense')
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
+  } else if (lid === VIRTUAL_TRAVELS) {
+    const tids = new Set(state.allLedgers.filter((L) => !L.deleted && isTravel(L)).map((L) => L.id));
+    state.records = state.allRecords
+      .filter((r) => !r.deleted && tids.has(r.ledgerId || 'main'))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id.localeCompare(a.id)));
   } else {
     const main = lid === 'main';
@@ -310,11 +316,12 @@ function setNum(el, cents) {
 function renderHeader() {
   const main = state.ledgerId === 'main';
   const virtual = state.ledgerId === VIRTUAL_GAMES;
+  const travel = state.ledgerId === VIRTUAL_TRAVELS;
   $('#month-label').textContent = main ? monthLabel(state.month) : '全部时间';
   $('#prev-month').style.display = main ? '' : 'none';
   $('#next-month').style.display = main ? '' : 'none';
   $('#this-month').style.display = main ? '' : 'none';
-  $('.hero-k').textContent = main ? '本月支出' : (virtual ? '游戏总支出' : '总支出');
+  $('.hero-k').textContent = main ? '本月支出' : (virtual ? '游戏总支出' : (travel ? '旅游总支出' : '总支出'));
   const s = state.stats;
   setNum($('#sum-expense'), s.expense);
   setNum($('#sum-income'), s.income);
@@ -322,6 +329,33 @@ function renderHeader() {
   setNum(net, s.net);
   net.classList.toggle('neg', s.net < 0);
   updateSyncChip();
+}
+
+/* ---------------- 旅游虚拟账本 ---------------- */
+const VIRTUAL_TRAVELS = 'virtual-travels';
+const TRAVEL_IDS = ['imp-jp', 'imp-jd', 'imp-whqd', 'imp-cs', 'imp-xn', 'imp-ly', 'imp-cx'];
+function isTravel(L) { return L.group === 'travel' || TRAVEL_IDS.includes(L.id); }
+function travelGroups() {
+  const out = [];
+  for (const L of state.allLedgers) {
+    if (L.deleted || !isTravel(L)) continue;
+    let cents = 0, n = 0;
+    for (const r of state.allRecords) {
+      if (r.deleted || r.mirror || (r.ledgerId || 'main') !== L.id) continue;
+      n += 1;
+      if (r.type === 'expense') cents += r.amount;
+    }
+    out.push({ L, cents, n });
+  }
+  return out.sort((a, b) => b.cents - a.cents);
+}
+function travelCardHtml(x) {
+  return `<div class="rrow" data-travel="${esc(x.L.id)}">
+    <span class="rico">${esc(x.L.icon)}</span>
+    <span class="rmid"><div class="rname">${esc(x.L.name)}</div>
+      <div class="rnote">${x.n} 笔${x.L.who ? ' · 👥 ' + esc(x.L.who) : ''}</div></span>
+    <span class="ramt expense">¥${fmt(x.cents)}</span>
+  </div>`;
 }
 
 /* ---------------- 游戏虚拟账本 ---------------- */
@@ -355,10 +389,19 @@ function gameCardHtml(g) {
 function renderLedgers() {
   const el = $('#ledger-row');
   if (!el) return;
-  el.innerHTML = state.ledgers.map((L) => `
-    <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('') +
-    `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">🎮 游戏</button>` +
-    `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
+  const cur = state.ledgers.find((L) => L.id === state.ledgerId);
+  const inTravel = cur && isTravel(cur);
+  const onTravel = state.ledgerId === VIRTUAL_TRAVELS;
+  const plain = state.ledgers.filter((L) => L.id === 'main' || !isTravel(L));
+  let chips = plain.map((L) => `
+    <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('');
+  chips += `<button class="lchip ${(onTravel || inTravel) ? 'on' : ''}" data-ledger="${VIRTUAL_TRAVELS}">🧳 旅游</button>`;
+  if (inTravel) {
+    chips += `<button class="lchip on" data-ledger="${esc(cur.id)}">${esc(cur.icon)} ${esc(cur.name)}</button>`;
+  }
+  chips += `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">🎮 游戏</button>`;
+  chips += `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
+  el.innerHTML = chips;
   el.querySelectorAll('[data-ledger]').forEach((b) => {
     b.onclick = () => { state.ledgerId = b.dataset.ledger; state.gameSel = null; sfx('tap'); buzz(8); reload(); };
   });
@@ -369,7 +412,13 @@ function addLedger() {
   const name = prompt('新账本名称（如：国庆旅行、装修）：');
   if (!name || !name.trim()) return;
   const icon = (prompt('选一个图标（表情，可留空）：', '🗂️') || '🗂️').trim() || '🗂️';
+  const isTrip = confirm('这是旅游账本吗？\n确定 = 归入"🧳 旅游"，取消 = 独立小账本');
   const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8), updatedAt: Date.now(), deleted: false };
+  if (isTrip) {
+    L.group = 'travel';
+    const who = prompt('和谁一起去的？（可留空）', '');
+    if (who && who.trim()) L.who = who.trim().slice(0, 20);
+  }
   state.allLedgers.push(L);
   if (!persist()) return;
   state.ledgerId = L.id;
@@ -591,6 +640,18 @@ let catsExpanded = false;
 function renderAdd() {
   const view = $('#view');
   if (state.showForm) { renderForm(view); return; }
+  if (state.ledgerId === VIRTUAL_TRAVELS) {
+    const ts = travelGroups();
+    view.innerHTML = `
+      <div class="card">
+        <div class="chart-title">旅游账本 · 点目的地看细账</div>
+        ${ts.map(travelCardHtml).join('') || '<div class="dp-empty">还没有旅游账本</div>'}
+      </div>`;
+    view.querySelectorAll('[data-travel]').forEach((el) => {
+      el.onclick = () => { sfx('tap'); state.ledgerId = el.dataset.travel; reload(); };
+    });
+    return;
+  }
   if (state.ledgerId === VIRTUAL_GAMES) {
     const gs = gameGroups();
     view.innerHTML = `
@@ -951,6 +1012,16 @@ function renderList() {
   const view = $('#view');
   let recs = state.records;
   let filterBar = '';
+  if (state.ledgerId === VIRTUAL_TRAVELS) {
+    const ts = travelGroups();
+    const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
+    view.innerHTML = tools0 + `<div class="card list-card">${ts.map(travelCardHtml).join('') || '<div class="dp-empty">还没有旅游账本</div>'}</div>`;
+    bindMultiToggle(view);
+    view.querySelectorAll('[data-travel]').forEach((el) => {
+      el.onclick = () => { sfx('tap'); state.ledgerId = el.dataset.travel; reload(); };
+    });
+    return;
+  }
   if (state.ledgerId === VIRTUAL_GAMES && !state.gameSel) {
     const gs = gameGroups();
     const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
@@ -1223,7 +1294,9 @@ function renderStats() {
   const main = state.ledgerId === 'main';
   const expCats = state.ledgerId === VIRTUAL_GAMES
     ? gameGroups().map((g) => ({ name: g.name, icon: '🎮', type: 'expense', amount: g.amount, count: g.count }))
-    : s.byCategory.filter((c) => c.type === 'expense');
+    : state.ledgerId === VIRTUAL_TRAVELS
+      ? travelGroups().map((t) => ({ name: t.L.name, icon: t.L.icon, type: 'expense', amount: t.cents, count: t.n }))
+      : s.byCategory.filter((c) => c.type === 'expense');
   const incCats = s.byCategory.filter((c) => c.type === 'income');
   /* 配色：>=3% 的分类按序取色，更小的合并为灰色"其他"，避免彩虹图 */
   const colorOf = new Map();
@@ -1478,7 +1551,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v41 · 2026-11-26';
+const APP_VER = 'v42 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1488,8 +1561,8 @@ function renderSettings() {
     const n = state.allRecords.filter((r) => !r.deleted && (r.ledgerId || 'main') === L.id).length;
     return `<div class="mrow">
       <span class="mico">${esc(L.icon)}</span>
-      <span class="mname">${esc(L.name)}<em>${n} 条记录${L.id === 'main' ? ' · 主账本，不可删除' : ''}</em></span>
-      ${L.id === 'main' ? '' : `<button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
+      <span class="mname">${esc(L.name)}<em>${n} 条记录${L.id === 'main' ? ' · 主账本，不可删除' : (isTravel(L) ? ' · 🧳旅游' : '')}${L.who ? ' · 👥' + esc(L.who) : ''}</em></span>
+      ${L.id === 'main' ? '' : `<button class="mini" data-who="${esc(L.id)}">同行人</button><button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
     </div>`;
   }).join('');
   initExportState();
@@ -1613,6 +1686,20 @@ function renderSettings() {
   };
   view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
   view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
+  view.querySelectorAll('[data-who]').forEach((b) => {
+    b.onclick = () => {
+      const L = state.allLedgers.find((x) => x.id === b.dataset.who && !x.deleted);
+      if (!L) return;
+      const w = prompt('和谁一起去的？（可留空）', L.who || '');
+      if (w === null) return;
+      L.who = w.trim().slice(0, 20);
+      L.updatedAt = Date.now();
+      persist();
+      reload();
+      scheduleSync();
+      toast(w.trim() ? '已记录同行人' : '已清空同行人');
+    };
+  });
 }
 
 /* ---------------- 渲染入口 ---------------- */
