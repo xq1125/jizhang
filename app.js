@@ -553,7 +553,7 @@ function renderAdd() {
     </div>`;
   }
   view.innerHTML = `
-    <div class="card">
+    <div class="card cal-card">
       <div class="chart-title">日历总览 · 点某天看当天、记账</div>
       ${calendarHtml(state.selDate)}
     </div>
@@ -979,7 +979,7 @@ function calendarHtml(selectedDate) {
     const t = byDate.get(ds);
     const cls = 'cal-cell' + (t ? ' has' : '') + (ds === today ? ' today' : '') + (ds === selectedDate ? ' sel' : '');
     const amt = t
-      ? `<span class="ce">${t.exp ? '-' + fmtDay(t.exp) : ''}</span><span class="ci">${t.inc ? '+' + fmtDay(t.inc) : ''}</span>`
+      ? `<span class="ce${t.exp >= 100000 ? ' long' : ''}">${t.exp ? '-' + fmtDay(t.exp) : ''}</span><span class="ci${t.inc >= 100000 ? ' long' : ''}">${t.inc ? '+' + fmtDay(t.inc) : ''}</span>`
       : '<span class="ce"></span><span class="ci"></span>';
     cells += `<div class="${cls}" data-day="${ds}"><span class="cd">${d}</span>${amt}</div>`;
   }
