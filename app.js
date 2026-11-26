@@ -876,10 +876,6 @@ function renderStats() {
   };
 
   view.innerHTML = `
-    ${main ? `<div class="card">
-      <div class="chart-title">日历总览 · 点某天看当天明细</div>
-      ${calendarHtml(state.dayFilter)}
-    </div>` : ''}
     <div class="card">
       <div class="chart-title">支出分类占比</div>
       <div class="pie-wrap">
@@ -922,9 +918,6 @@ function renderStats() {
   const bctx = setupCanvas(bars, W, 170);
   drawBars(bctx, cols, W, 170);
 
-  view.querySelectorAll('.cal-cell.has').forEach((el) => {
-    el.onclick = () => { state.dayFilter = el.dataset.day; state.tab = 'list'; render(); };
-  });
   view.querySelectorAll('[data-legend]').forEach((b) => {
     b.onclick = () => { legendState[b.dataset.legend] = !legendState[b.dataset.legend]; renderStats(); };
   });
