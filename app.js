@@ -67,6 +67,7 @@ function loadSettings() {
   s.lastSync = s.lastSync || 0;
   s.lastError = s.lastError || '';
   s.mirror = s.mirror === undefined ? true : !!s.mirror;
+  s.sound = s.sound === undefined ? true : !!s.sound;
   return s;
 }
 function saveSettings() { localStorage.setItem(LS_SET, JSON.stringify(settings)); }
@@ -145,6 +146,7 @@ function toast(msg, isErr = false) {
   t.textContent = msg;
   t.className = 'toast' + (isErr ? ' err' : '');
   t.hidden = false;
+  if (isErr) sfx('error');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, 2400);
 }
@@ -179,7 +181,7 @@ async function doSync(kind) {
     persist();
     rebuildMirrors();
     reload();
-    if (kind === 'manual') toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓');
+    if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); }
   } catch (e) {
     settings.lastError = e.message;
     saveSettings();
@@ -208,6 +210,61 @@ function updateSyncChip() {
     : '未配置同步（数据只存在本机）';
 }
 
+/* ---------------- 音效与震动 ---------------- */
+let audioCtx = null;
+function sfx(name) {
+  if (!settings || !settings.sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t = audioCtx.currentTime;
+    const tone = (freq, start, dur, type, gain) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t + start);
+      g.gain.linearRampToValueAtTime(gain || 0.1, t + start + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t + start + dur);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t + start);
+      o.stop(t + start + dur + 0.05);
+    };
+    if (name === 'save') { tone(660, 0, 0.12); tone(880, 0.09, 0.2); }
+    else if (name === 'tap') { tone(1200, 0, 0.04, 'triangle', 0.045); }
+    else if (name === 'delete') { tone(220, 0, 0.16, 'triangle', 0.09); }
+    else if (name === 'error') { tone(170, 0, 0.22, 'sawtooth', 0.05); }
+    else if (name === 'sync') { tone(523, 0, 0.1, 'sine', 0.07); tone(659, 0.08, 0.1, 'sine', 0.07); tone(784, 0.16, 0.18, 'sine', 0.08); }
+  } catch (e) { /* ignore */ }
+}
+function buzz(pattern) {
+  if (!settings || !settings.sound) return;
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* ignore */ }
+}
+
+/* ---------------- 数字滚动 ---------------- */
+function setNum(el, cents) {
+  const prev = el._val == null ? cents : el._val;
+  el._val = cents;
+  if (prev === cents) {
+    el.textContent = (cents < 0 ? '-¥' : '¥') + fmt(Math.abs(cents));
+    return;
+  }
+  const dur = 420;
+  const t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const v = prev + (cents - prev) * eased;
+    el.textContent = (v < 0 ? '-¥' : '¥') + fmt(Math.abs(v));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  el.classList.remove('bump');
+  void el.offsetWidth;
+  el.classList.add('bump');
+}
+
 /* ---------------- 顶栏 + 结余卡 ---------------- */
 function renderHeader() {
   const main = state.ledgerId === 'main';
@@ -217,10 +274,10 @@ function renderHeader() {
   $('#this-month').style.display = main ? '' : 'none';
   $('.hero-k').textContent = main ? '本月支出' : '总支出';
   const s = state.stats;
-  $('#sum-expense').textContent = '¥' + fmt(s.expense);
-  $('#sum-income').textContent = '¥' + fmt(s.income);
+  setNum($('#sum-expense'), s.expense);
+  setNum($('#sum-income'), s.income);
   const net = $('#sum-net');
-  net.textContent = (s.net < 0 ? '-¥' : '¥') + fmt(Math.abs(s.net));
+  setNum(net, s.net);
   net.classList.toggle('neg', s.net < 0);
   updateSyncChip();
 }
@@ -233,7 +290,7 @@ function renderLedgers() {
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('') +
     `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新账本</button>`;
   el.querySelectorAll('[data-ledger]').forEach((b) => {
-    b.onclick = () => { state.ledgerId = b.dataset.ledger; reload(); };
+    b.onclick = () => { state.ledgerId = b.dataset.ledger; sfx('tap'); reload(); };
   });
   el.querySelector('#btn-add-ledger').onclick = addLedger;
 }
@@ -432,7 +489,7 @@ function renderAdd() {
     b.onclick = () => { f.type = b.dataset.type; f.categoryId = null; render(); };
   });
   view.querySelectorAll('.cat[data-cat]').forEach((el) => {
-    el.onclick = () => { f.categoryId = el.dataset.cat; render(); };
+    el.onclick = () => { f.categoryId = el.dataset.cat; sfx('tap'); render(); };
   });
   const more = view.querySelector('#cat-more');
   if (more) more.onclick = () => { catsExpanded = !catsExpanded; render(); };
@@ -495,6 +552,8 @@ function saveRecord() {
     state.allRecords.push(Object.assign({ id: genId(), ledgerId: state.ledgerId, deleted: false }, data, { updatedAt: now }));
     toast('已记一笔 ✓');
   }
+  sfx('save');
+  buzz(35);
   if (!persist()) return;
   rebuildMirrors();
   resetForm();
@@ -513,6 +572,8 @@ function deleteRecord() {
     persist();
   }
   toast('已删除');
+  sfx('delete');
+  buzz([25, 40, 25]);
   resetForm();
   state.tab = 'list';
   rebuildMirrors();
@@ -557,6 +618,8 @@ function applyMove() {
   reload();
   scheduleSync();
   toast(`已移动 ${cnt} 条`);
+  sfx('save');
+  buzz(35);
 }
 
 function renderList() {
@@ -930,6 +993,7 @@ function exportCsv() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 8000);
   toast(`已导出 ${rows.length} 条记录`);
+  sfx('save');
 }
 
 /* ---------------- 设置 ---------------- */
@@ -969,6 +1033,12 @@ function renderSettings() {
       <div class="frow"><span class="fk" style="width:auto;flex:1">每日汇总进主账本</span>
         <button class="mini" id="mirror-toggle">${settings.mirror ? '已开启' : '已关闭'}</button></div>
       <div class="set-help">开启后，小账本每天的支出会在主账本当天生成一条"🗂️ 活动汇总"（点它跳回小账本看细账）；主账本里备注提到某小账本（如"日本""星邱"）的记录也会带跳转标记。主账本因此=日常+活动的完整全貌。</div>
+    </div>
+    <div class="card">
+      <div class="chart-title">交互体验</div>
+      <div class="frow"><span class="fk" style="width:auto;flex:1">音效与震动</span>
+        <button class="mini" id="sound-toggle">${settings.sound ? '已开启' : '已关闭'}</button></div>
+      <div class="set-help">保存"叮"、删除低响、同步上行琶音、切换轻点；安卓 App 上还有震动反馈。关闭后全部静音。</div>
     </div>
     <div class="card">
       <div class="chart-title">账本管理</div>
@@ -1039,6 +1109,13 @@ function renderSettings() {
     scheduleSync();
     toast(settings.mirror ? '已开启每日汇总' : '已关闭并清除汇总记录');
   };
+  const snd = view.querySelector('#sound-toggle');
+  if (snd) snd.onclick = () => {
+    settings.sound = !settings.sound;
+    saveSettings();
+    if (settings.sound) { sfx('save'); buzz(35); }
+    render();
+  };
   view.querySelectorAll('[data-ren]').forEach((b) => { b.onclick = () => renameLedger(b.dataset.ren); });
   view.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => deleteLedger(b.dataset.del); });
 }
@@ -1068,6 +1145,7 @@ $('#next-month').onclick = () => shiftMonth(1);
 $('#this-month').onclick = () => { if (state.month !== thisMonth()) { state.month = thisMonth(); state.dayFilter = null; reload(); } };
 document.querySelectorAll('.tab').forEach((t) => {
   t.onclick = () => {
+    sfx('tap');
     state.tab = t.dataset.tab;
     if (t.dataset.tab !== 'stats') state.dayFilter = null;
     state.multiSel = false;

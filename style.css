@@ -212,7 +212,10 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   font-size: 20px; transition: all .15s ease; border: 1.5px solid transparent;
 }
 .cat .cname { font-size: 11px; color: var(--sub); max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.cat.sel .cico { border-color: var(--ink); background: #fff; }
+.cat.sel .cico { border-color: var(--ink); background: #fff; animation: bounce .22s ease-out; }
+@keyframes bounce { 0% { transform: scale(1); } 40% { transform: scale(1.16); } 100% { transform: scale(1); } }
+@keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.035); } 100% { transform: scale(1); } }
+.hero-v.bump, .hero-cell .v.bump { animation: bump .3s ease-out; transform-origin: left center; }
 .cat.sel .cname { color: var(--ink); font-weight: 600; }
 .cat.add-cat .cico { border: 1.5px dashed var(--faint); background: transparent; color: var(--faint); font-size: 18px; }
 .cat.cat-more .cico { border: 1.5px dashed var(--faint); background: transparent; color: var(--sub); font-size: 15px; }
@@ -235,7 +238,7 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   background: var(--ink); color: #fff; font-size: 15.5px; font-weight: 600; cursor: pointer;
   transition: opacity .15s ease;
 }
-.btn-primary:active { opacity: .8; }
+.btn-primary:active { opacity: .85; transform: scale(.98); }
 .btn-ghost {
   padding: 14px 18px; border: 1px solid var(--line); border-radius: 13px;
   background: var(--card); color: var(--sub); font-size: 14.5px; cursor: pointer;
