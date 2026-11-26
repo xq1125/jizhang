@@ -19,7 +19,15 @@ PEOPLE = [
     {"id": "p-5", "name": "爸爸", "avatar": "🐻"},
     {"id": "p-6", "name": "妈妈", "avatar": "🌷"},
 ]
-WHOIDS = {"imp-jp": ["p-1"], "imp-whqd": ["p-6", "p-5"], "imp-cx": ["p-2"]}
+WHOIDS = {
+    "imp-jp": ["p-1"],
+    "imp-whqd": ["p-6", "p-5"],
+    "imp-cx": ["p-2"],
+    "imp-ly": ["p-1"],
+    "imp-cs": ["p-4"],
+    "imp-jd": ["p-4", "p-3"],
+    "imp-xn": ["p-1", "p-2"],
+}
 
 
 def req(method, path, body=None):
