@@ -368,16 +368,14 @@ const OTHERS_IDS = ['imp-bday'];
 function isTravel(L) { return L.group === 'travel' || TRAVEL_IDS.includes(L.id); }
 function isOffline(L) { return L.group === 'offline' || OFFLINE_IDS.includes(L.id); }
 function isOthers(L) { return L.group === 'others' || OTHERS_IDS.includes(L.id); }
-/* 账本的记录集合：virtual 账本 = 主账本里打了 tripId 标签的记录；普通账本 = ledgerId 匹配 */
+/* 账本的记录集合：主账本=所有主账本记录(含带标签的)；小账本=自有记录+主账本里打本账本标签的记录 */
 function recordsOfLedger(L) {
   if (!L) return [];
-  if (L.virtual) {
-    return state.allRecords.filter((r) => !r.deleted && !r.mirror && (r.ledgerId || 'main') === 'main' && r.tripId === L.id);
-  }
   if (L.id === 'main') {
     return state.allRecords.filter((r) => !r.deleted && !r.mirror && (r.ledgerId || 'main') === 'main');
   }
-  return state.allRecords.filter((r) => !r.deleted && !r.mirror && (r.ledgerId || 'main') === L.id);
+  return state.allRecords.filter((r) => !r.deleted && !r.mirror
+    && ((r.ledgerId || 'main') === L.id || ((r.ledgerId || 'main') === 'main' && r.tripId === L.id)));
 }
 
 function ledgerGroups(pred) {
@@ -739,9 +737,9 @@ function escRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function buildLedgerDayIndex() {
   const idx = new Map();
   for (const L of state.allLedgers) {
-    if (L.deleted || L.id === 'main') continue;
-    for (const r of state.allRecords) {
-      if (r.deleted || r.mirror || (r.ledgerId || 'main') !== L.id || r.type !== 'expense') continue;
+    if (L.deleted || L.id === 'main' || L.virtual) continue;
+    for (const r of recordsOfLedger(L)) {
+      if (r.type !== 'expense') continue;
       const k = L.id + '|' + r.date;
       let e = idx.get(k);
       if (!e) { e = { L, total: 0, amounts: new Set() }; idx.set(k, e); }
@@ -1197,10 +1195,9 @@ function saveRecord() {
       data.catId = GAME_CAT_ID; data.catName = '游戏'; data.catIcon = '🎮';
       if (f.game) data.note = (data.note ? f.game + ' ' + data.note : f.game);
     }
-    const curL = state.allLedgers.find((L) => L.id === state.ledgerId);
-    const lid = (state.ledgerId === VIRTUAL_GAMES || (curL && curL.virtual)) ? 'main' : state.ledgerId;
-    const rec = Object.assign({ id: genId(), ledgerId: lid, deleted: false }, data, { updatedAt: now });
-    if (curL && curL.virtual) rec.tripId = curL.id;
+    const curL = state.allLedgers.find((L) => L.id === state.ledgerId && L.id !== 'main');
+    const rec = Object.assign({ id: genId(), ledgerId: 'main', deleted: false }, data, { updatedAt: now });
+    if (curL) rec.tripId = curL.id;
     state.allRecords.push(rec);
     undo = () => {
       const cur = state.allRecords.find((r) => r.id === rec.id);
@@ -1322,8 +1319,8 @@ function applyMove() {
     snaps.push({ id: r.id, date: r.date, ledgerId: r.ledgerId || 'main', tripId: r.tripId || null });
     if (nd) r.date = nd;
     if (nl) {
-      if (T && T.virtual) { r.ledgerId = 'main'; r.tripId = nl; }
-      else { r.ledgerId = nl; delete r.tripId; }
+      if (nl === 'main') { r.ledgerId = 'main'; delete r.tripId; }
+      else { r.ledgerId = 'main'; r.tripId = nl; }
     }
     r.updatedAt = now;
   }
@@ -1897,9 +1894,7 @@ function exportCsv() {
   const rows = state.allRecords
     .filter((r) => !r.deleted && (lid === 'all'
       ? true
-      : (EL && EL.virtual
-        ? ((r.ledgerId || 'main') === 'main' && r.tripId === lid)
-        : ((r.ledgerId || 'main') === lid))))
+      : ((r.ledgerId || 'main') === lid || ((r.ledgerId || 'main') === 'main' && r.tripId === lid))))
     .filter((r) => r.date >= from + "-01" && r.date <= to + "-31")
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   if (!rows.length) { toast('所选范围内没有记录', true); return; }
@@ -1929,7 +1924,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v61 · 2026-11-26';
+const APP_VER = 'v62 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
