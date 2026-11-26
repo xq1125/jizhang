@@ -1041,7 +1041,7 @@ function setupCanvas(canvas, w, h) {
   return ctx;
 }
 
-function drawPie(ctx, slices, total, size) {
+function drawPie(ctx, slices, total, size, hi) {
   const cx = size / 2, cy = size / 2, R = size * 0.44, r = size * 0.30;
   let a = -Math.PI / 2;
   if (!slices.length) {
@@ -1050,17 +1050,21 @@ function drawPie(ctx, slices, total, size) {
   }
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#ffffff';
-  for (const sl of slices) {
+  slices.forEach((sl, i) => {
     const a2 = a + (sl.value / total) * Math.PI * 2;
+    const isHi = hi === i;
+    const rr = isHi ? R + 4 : R;
+    ctx.globalAlpha = (hi >= 0 && !isHi) ? 0.35 : 1;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, R, a, a2);
+    ctx.arc(cx, cy, rr, a, a2);
     ctx.closePath();
     ctx.fillStyle = sl.color;
     ctx.fill();
     ctx.stroke();
     a = a2;
-  }
+  });
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'destination-out';
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
@@ -1138,13 +1142,16 @@ function renderStats() {
     if (frac >= 0.03) {
       const col = PALETTE[slices.length % PALETTE.length];
       colorOf.set(c, col);
-      slices.push({ value: c.amount, color: col });
+      slices.push({ value: c.amount, color: col, label: `${c.icon} ${c.name}　¥${fmt(c.amount)} · ${Math.round(frac * 100)}%` });
     } else {
       otherAmt += c.amount; otherN++;
       colorOf.set(c, '#c9cdd6');
     }
   }
-  if (otherN > 0) slices.push({ value: otherAmt, color: '#c9cdd6' });
+  if (otherN > 0) {
+    const frac = s.expense > 0 ? otherAmt / s.expense : 0;
+    slices.push({ value: otherAmt, color: '#c9cdd6', label: `📦 其他 ${otherN} 项　¥${fmt(otherAmt)} · ${Math.round(frac * 100)}%` });
+  }
   incCats.forEach((c, i) => colorOf.set(c, PALETTE[i % PALETTE.length]));
   const legendRows = (cats, total) => cats.map((c) => `
     <div class="legend-item">
@@ -1200,7 +1207,58 @@ function renderStats() {
   const pie = view.querySelector('#pie');
   const pieSize = Math.min(260, Math.max(200, (view.clientWidth || 360) - 100));
   const pctx = setupCanvas(pie, pieSize, pieSize);
-  drawPie(pctx, slices, s.expense, pieSize);
+  let pieHi = -1;
+  const redrawPie = () => {
+    pctx.clearRect(0, 0, pieSize, pieSize);
+    drawPie(pctx, slices, s.expense, pieSize, pieHi);
+  };
+  redrawPie();
+
+  /* 按住色块看金额，松开消失（鼠标悬停亦可） */
+  const pieTip = document.createElement('div');
+  pieTip.className = 'chart-tip';
+  pieTip.hidden = true;
+  const pieHost = pie.parentElement;
+  pieHost.style.position = 'relative';
+  pieHost.appendChild(pieTip);
+  const hitSlice = (clientX, clientY) => {
+    const rect = pie.getBoundingClientRect();
+    const x = clientX - rect.left - pieSize / 2;
+    const y = clientY - rect.top - pieSize / 2;
+    const dist = Math.hypot(x, y);
+    if (dist > pieSize * 0.46 || dist < pieSize * 0.30 || !slices.length || s.expense <= 0) return -1;
+    let ang = Math.atan2(y, x) + Math.PI / 2;
+    if (ang < 0) ang += Math.PI * 2;
+    let acc = 0;
+    for (let i = 0; i < slices.length; i++) {
+      acc += (slices[i].value / s.expense) * Math.PI * 2;
+      if (ang <= acc) return i;
+    }
+    return slices.length - 1;
+  };
+  const showPie = (clientX, clientY) => {
+    const i = hitSlice(clientX, clientY);
+    if (i !== pieHi) { pieHi = i; redrawPie(); }
+    if (i >= 0) {
+      pieTip.textContent = slices[i].label;
+      pieTip.style.left = (pie.offsetLeft + pieSize / 2) + 'px';
+      pieTip.style.top = (pie.offsetTop + pieSize / 2 - pieSize * 0.16) + 'px';
+      pieTip.hidden = false;
+    } else {
+      pieTip.hidden = true;
+    }
+  };
+  const hidePie = () => {
+    pieTip.hidden = true;
+    if (pieHi !== -1) { pieHi = -1; redrawPie(); }
+  };
+  pie.addEventListener('mousedown', (e) => showPie(e.clientX, e.clientY));
+  pie.addEventListener('mousemove', (e) => showPie(e.clientX, e.clientY));
+  pie.addEventListener('mouseup', hidePie);
+  pie.addEventListener('mouseleave', hidePie);
+  pie.addEventListener('touchstart', (e) => { e.preventDefault(); showPie(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+  pie.addEventListener('touchmove', (e) => { e.preventDefault(); showPie(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+  pie.addEventListener('touchend', hidePie);
 
   const bars = view.querySelector('#bars');
   const W = Math.max(200, (view.clientWidth || 360) - 60);
@@ -1328,7 +1386,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v36 · 2026-11-26';
+const APP_VER = 'v40 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
