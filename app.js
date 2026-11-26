@@ -368,8 +368,27 @@ function groupCardHtml(x) {
     <span class="rico">${esc(x.L.icon)}</span>
     <span class="rmid"><div class="rname">${esc(x.L.name)}</div>
       <div class="rnote">${x.n} 笔${x.L.who ? ' · 👥 ' + esc(x.L.who) : ''}</div></span>
+    <button class="who-btn" data-who-for="${esc(x.L.id)}" title="同行人">${x.L.who ? '✏️' : '👥+'}</button>
     <span class="ramt expense">¥${fmt(x.cents)}</span>
   </div>`;
+}
+function bindWhoButtons(view) {
+  view.querySelectorAll('[data-who-for]').forEach((b) => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const L = state.allLedgers.find((x) => x.id === b.dataset.whoFor && !x.deleted);
+      if (!L) return;
+      const w = prompt('和谁一起？（可留空）', L.who || '');
+      if (w === null) return;
+      L.who = w.trim().slice(0, 20);
+      L.updatedAt = Date.now();
+      persist();
+      reload();
+      scheduleSync();
+      sfx('tap');
+      toast(w.trim() ? '已记录同行人 👥' : '已清空同行人');
+    };
+  });
 }
 function virtualIds(L) { return isTravel(L) ? VIRTUAL_TRAVELS : (isOffline(L) ? VIRTUAL_OFFLINE : (isOthers(L) ? VIRTUAL_OTHERS : null)); }
 function groupTitle(lid) {
@@ -684,6 +703,7 @@ function renderAdd() {
     view.querySelectorAll('[data-gledger]').forEach((el) => {
       el.onclick = () => { sfx('tap'); state.ledgerId = el.dataset.gledger; reload(); };
     });
+    bindWhoButtons(view);
     return;
   }
   if (state.ledgerId === VIRTUAL_GAMES) {
@@ -1054,6 +1074,7 @@ function renderList() {
     view.querySelectorAll('[data-gledger]').forEach((el) => {
       el.onclick = () => { sfx('tap'); state.ledgerId = el.dataset.gledger; reload(); };
     });
+    bindWhoButtons(view);
     return;
   }
   if (state.ledgerId === VIRTUAL_GAMES && !state.gameSel) {
@@ -1585,7 +1606,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v44 · 2026-11-26';
+const APP_VER = 'v45 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
