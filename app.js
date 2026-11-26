@@ -936,17 +936,7 @@ function renderAdd() {
   const dayRecs = state.records.filter((r) => r.date === state.selDate);
   let exp = 0, inc = 0;
   for (const r of dayRecs) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
-  let rows = '';
-  for (const r of dayRecs) {
-    const link = findLedgerLink(r);
-    rows += `<div class="rrow" data-id="${esc(r.id)}">
-      <span class="rico">${esc(r.catIcon)}</span>
-      <span class="rmid"><div class="rname">${esc(r.catName)}</div>
-        ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
-      <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
-      ${jlinkHtml(link)}
-    </div>`;
-  }
+  const rows = dayRowsHtml(dayRecs, false);
   view.innerHTML = `
     <div class="card cal-card">
       <div class="chart-title">日历总览 · 点某天看当天、记账</div>
@@ -964,6 +954,7 @@ function renderAdd() {
   view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
     el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); buzz(10); render(); };
   });
+  bindTripJumps(view);
   bindJLinks(view);
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
   view.querySelectorAll('.rrow').forEach((el) => {
@@ -1191,6 +1182,53 @@ function deleteRecord() {
   });
 }
 
+/* 主账本视图：带 tripId 的支出按"账本+天"合并成一行总和；其余正常显示 */
+function dayRowsHtml(list, ms) {
+  let html = '';
+  const mainView = state.ledgerId === 'main' && !ms;
+  const agg = new Map();
+  if (mainView) {
+    for (const r of list) {
+      if (r.tripId && !r.mirror && r.type === 'expense') {
+        const e = agg.get(r.tripId) || { cents: 0, n: 0 };
+        e.cents += r.amount; e.n += 1; agg.set(r.tripId, e);
+      }
+    }
+  }
+  for (const r of list) {
+    if (mainView && r.tripId && !r.mirror && r.type === 'expense') continue;
+    const link = findLedgerLink(r);
+    const isMirror = !!r.mirror;
+    const picked = ms && state.selected.has(r.id);
+    html += `<div class="rrow${picked ? ' picked' : ''}${ms && isMirror ? ' mirror-row' : ''}" data-id="${esc(r.id)}" data-mirror="${isMirror ? '1' : ''}">
+      ${ms ? `<span class="selbox">${picked ? '✓' : ''}</span>` : `<span class="rico">${esc(r.catIcon)}</span>`}
+      <span class="rmid"><div class="rname">${esc(r.catName)}</div>
+        ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
+      <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
+      ${!ms ? jlinkHtml(link) : ''}
+    </div>`;
+  }
+  if (mainView) {
+    for (const [tid, e] of agg) {
+      const T = state.allLedgers.find((x) => x.id === tid && !x.deleted);
+      if (!T) continue;
+      html += `<div class="rrow" data-tripjump="${esc(tid)}" data-tripdate="${esc(list[0].date)}">
+        <span class="rico">${esc(T.icon)}</span>
+        <span class="rmid"><div class="rname">${esc(T.name)}</div>
+          <div class="rnote">${e.n} 笔明细 ›</div></span>
+        <span class="ramt expense">-¥${fmt(e.cents)}</span>
+      </div>`;
+    }
+  }
+  return html;
+}
+
+function bindTripJumps(view) {
+  view.querySelectorAll('[data-tripjump]').forEach((el) => {
+    el.onclick = () => { sfx('tap'); jumpToLedger(el.dataset.tripjump, el.dataset.tripdate); };
+  });
+}
+
 /* ---------------- 明细 ---------------- */
 let moveState = { date: '', ledger: '' };
 
@@ -1341,18 +1379,7 @@ function renderList() {
     html += `<div class="day-group">
       <div class="day-head${ms ? ' dayhead-act' : ''}" data-dayall="${esc(date)}"><span>${dayLabel(date)}</span>
         <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
-    for (const r of list) {
-      const link = findLedgerLink(r);
-      const isMirror = !!r.mirror;
-      const picked = state.selected.has(r.id);
-      html += `<div class="rrow${ms && picked ? ' picked' : ''}${ms && isMirror ? ' mirror-row' : ''}" data-id="${esc(r.id)}" data-mirror="${isMirror ? '1' : ''}">
-        ${ms ? `<span class="selbox">${picked ? '✓' : ''}</span>` : `<span class="rico">${esc(r.catIcon)}</span>`}
-        <span class="rmid"><div class="rname">${esc(r.catName)}</div>
-          ${r.note ? `<div class="rnote">${esc(r.note)}</div>` : ''}</span>
-        <span class="ramt ${r.type}">${r.type === 'expense' ? '-' : '+'}¥${fmt(r.amount)}</span>
-        ${!ms ? jlinkHtml(link) : ''}
-      </div>`;
-    }
+    html += dayRowsHtml(list, ms);
     html += '</div>';
   }
   html += '</div>';
@@ -1361,6 +1388,7 @@ function renderList() {
   bindClearDay(view);
   bindMultiToggle(view);
   bindJLinks(view);
+  bindTripJumps(view);
   const gb = view.querySelector('#game-back');
   if (gb) gb.onclick = () => { state.gameSel = null; render(); };
 
@@ -1836,7 +1864,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v52 · 2026-11-26';
+const APP_VER = 'v53 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
