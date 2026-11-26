@@ -840,7 +840,8 @@ window.addEventListener('online', () => { if (settings.token) doSync('auto'); })
 /* ---------------- 安装成 App ---------------- */
 let deferredPrompt = null;
 const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-  || window.navigator.standalone === true;
+  || window.navigator.standalone === true
+  || !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 window.addEventListener('beforeinstallprompt', (e) => {

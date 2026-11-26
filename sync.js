@@ -107,6 +107,22 @@
     const records = mergeList(local.records, remote.records);
     const categories = mergeList(local.categories, remote.categories);
     const ledgers = mergeList(local.ledgers, remote.ledgers);
+    /* 系统示例分类（seed-*）：任何一端删除即永久删除，防止新设备播种后复活 */
+    const seedDel = {};
+    for (const c of (local.categories || [])) {
+      if (String(c.id).indexOf('seed-') === 0 && c.deleted) seedDel[c.id] = c.updatedAt || 0;
+    }
+    for (const c of (remote.categories || [])) {
+      if (String(c.id).indexOf('seed-') === 0 && c.deleted) {
+        seedDel[c.id] = Math.max(seedDel[c.id] || 0, c.updatedAt || 0);
+      }
+    }
+    for (const c of categories) {
+      if (String(c.id).indexOf('seed-') === 0 && seedDel[c.id] != null) {
+        c.deleted = true;
+        c.updatedAt = Math.max(c.updatedAt || 0, seedDel[c.id]) + 1;
+      }
+    }
     payload.records = records;
     payload.categories = categories;
     payload.ledgers = ledgers;
