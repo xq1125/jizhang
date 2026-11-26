@@ -18,6 +18,8 @@ PEOPLE = [
     {"id": "p-4", "name": "ycx", "avatar": "🎈"},
     {"id": "p-5", "name": "爸爸", "avatar": "🐻"},
     {"id": "p-6", "name": "妈妈", "avatar": "🌷"},
+    {"id": "p-7", "name": "summer", "avatar": "☀️"},
+    {"id": "p-8", "name": "九玖", "avatar": "🎀"},
 ]
 WHOIDS = {
     "imp-jp": ["p-1"],
@@ -27,6 +29,8 @@ WHOIDS = {
     "imp-cs": ["p-4"],
     "imp-jd": ["p-4", "p-3"],
     "imp-xn": ["p-1", "p-2"],
+    "imp-xq66": ["p-7"],
+    "imp-xq1121": ["p-7", "p-8"],
 }
 
 
