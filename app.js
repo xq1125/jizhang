@@ -89,6 +89,7 @@ const state = {
   dayFilter: null,
   selDate: todayStr(),
   showForm: false,
+  dayIdx: null,
   multiSel: false,
   selected: new Set(),
   allRecords: [],
@@ -109,6 +110,7 @@ function reload() {
   state.ledgers = state.allLedgers.filter((L) => !L.deleted);
   if (!state.ledgers.some((L) => L.id === state.ledgerId)) state.ledgerId = 'main';
   state.categories = state.allCategories.filter((c) => !c.deleted);
+  state.dayIdx = buildLedgerDayIndex();
   const month = state.month, lid = state.ledgerId;
   const main = lid === 'main';
   state.records = state.allRecords
@@ -387,19 +389,51 @@ function ledgerKeywords(L) {
 
 function escRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+/* 小账本"账本+日期"索引：当天合计与单条金额集合，用于主账本金额匹配 */
+function buildLedgerDayIndex() {
+  const idx = new Map();
+  for (const L of state.allLedgers) {
+    if (L.deleted || L.id === 'main') continue;
+    for (const r of state.allRecords) {
+      if (r.deleted || r.mirror || (r.ledgerId || 'main') !== L.id || r.type !== 'expense') continue;
+      const k = L.id + '|' + r.date;
+      let e = idx.get(k);
+      if (!e) { e = { L, total: 0, amounts: new Set() }; idx.set(k, e); }
+      e.total += r.amount;
+      e.amounts.add(r.amount);
+    }
+  }
+  return idx;
+}
+
 function findLedgerLink(r) {
   if (r.mirror && r.mirror.ledgerId) {
     const L = state.allLedgers.find((x) => x.id === r.mirror.ledgerId && !x.deleted);
     if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
   }
-  if (state.ledgerId === 'main' && r.note) {
-    for (const L of state.ledgers) {
-      if (L.id === 'main') continue;
-      try {
-        if (new RegExp('(' + ledgerKeywords(L).map(escRe).join('|') + ')').test(r.note)) {
-          return { lid: L.id, date: null, label: '🔗 ' + L.name };
-        }
-      } catch (e) { /* ignore */ }
+  if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense') {
+    /* 1) 备注关键词 */
+    if (r.note) {
+      for (const L of state.ledgers) {
+        if (L.id === 'main') continue;
+        try {
+          if (new RegExp('(' + ledgerKeywords(L).map(escRe).join('|') + ')').test(r.note)) {
+            return { lid: L.id, date: null, label: '🔗 ' + L.name };
+          }
+        } catch (e) { /* ignore */ }
+      }
+    }
+    /* 2) 同一天：金额等于小账本当天合计 */
+    if (state.dayIdx) {
+      for (const [k, e] of state.dayIdx) {
+        if (!k.endsWith('|' + r.date)) continue;
+        if (e.total === r.amount) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 合计' };
+      }
+      /* 3) 同一天：金额等于小账本某一条 */
+      for (const [k, e] of state.dayIdx) {
+        if (!k.endsWith('|' + r.date)) continue;
+        if (e.amounts.has(r.amount)) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 同额' };
+      }
     }
   }
   return null;
@@ -494,7 +528,6 @@ function renderAdd() {
         <div class="dp-sum">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</div>
       </div>
       <button class="btn-primary" id="btn-day-add" style="margin:2px 0 12px">✏️ 记一笔</button>
-      ${xrefHtml(state.selDate)}
       ${rows || '<div class="dp-empty">这天还没有记录</div>'}
     </div>`;
   bindXref(view);
@@ -808,8 +841,7 @@ function renderList() {
     for (const r of list) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
     html += `<div class="day-group">
       <div class="day-head${ms ? ' dayhead-act' : ''}" data-dayall="${esc(date)}"><span>${dayLabel(date)}</span>
-        <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>
-      ${ms ? '' : xrefHtml(date)}`;
+        <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
     for (const r of list) {
       const link = findLedgerLink(r);
       const isMirror = !!r.mirror;
@@ -1142,7 +1174,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v29 · 2026-11-26';
+const APP_VER = 'v30 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
