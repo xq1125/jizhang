@@ -11,6 +11,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 TOKEN = os.environ.get("GH_TOKEN", "")
 GF = "jizhang-ledger.json"
 TRAVEL_IDS = ["imp-jp", "imp-jd", "imp-whqd", "imp-cs", "imp-xn", "imp-ly", "imp-cx"]
+OFFLINE_IDS = ["imp-xq66", "imp-xq1121"]
 
 
 def req(method, path, body=None):
@@ -32,11 +33,12 @@ data = json.loads(txt)
 now = int(time.time() * 1000)
 n = 0
 for L in data["ledgers"]:
-    if L["id"] in TRAVEL_IDS and L.get("group") != "travel":
-        L["group"] = "travel"
+    want = "travel" if L["id"] in TRAVEL_IDS else ("offline" if L["id"] in OFFLINE_IDS else None)
+    if want and L.get("group") != want:
+        L["group"] = want
         L["updatedAt"] = now
         n += 1
-print("标记旅游账本:", n)
+print("标记分组账本:", n)
 if n:
     data["syncedAt"] = now + 1
     req("PATCH", "/gists/" + g["id"], {"files": {GF: {"content": json.dumps(data, ensure_ascii=False)}}})
@@ -46,4 +48,6 @@ if n:
         t2 = urllib.request.urlopen(live["raw_url"], timeout=60).read().decode()
     chk = json.loads(t2)
     tg = [L["name"] for L in chk["ledgers"] if L.get("group") == "travel" and not L.get("deleted")]
+    og = [L["name"] for L in chk["ledgers"] if L.get("group") == "offline" and not L.get("deleted")]
     print("云端旅游账本:", "、".join(tg))
+    print("云端线下账本:", "、".join(og))
