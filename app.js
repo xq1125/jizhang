@@ -1128,7 +1128,7 @@ function exportCsv() {
   sfx('save');
 }
 
-const APP_VER = 'v27 · 2026-11-26';
+const APP_VER = 'v28 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
