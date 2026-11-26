@@ -1,5 +1,5 @@
 /* 记账本 Service Worker —— 缓存应用外壳，离线可用；GitHub API 不拦截 */
-const VERSION = 'jizhang-v60';
+const VERSION = 'jizhang-v61';
 const SHELL = [
   './',
   './index.html',

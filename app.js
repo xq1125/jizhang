@@ -1017,6 +1017,7 @@ function renderAdd() {
   }
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
   view.querySelectorAll('.rrow').forEach((el) => {
+    if (el.dataset.tripjump) return;
     el.onclick = () => {
       if (lpFired) { lpFired = false; return; }
       const r = dayRecs.find((x) => x.id === el.dataset.id);
@@ -1489,6 +1490,7 @@ function renderList() {
   } else {
     bindXref(view);
     view.querySelectorAll('.rrow').forEach((el) => {
+      if (el.dataset.tripjump) return;
       el.onclick = () => {
         if (lpFired) { lpFired = false; return; }
         const r = state.records.find((x) => x.id === el.dataset.id);
@@ -1927,7 +1929,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v60 · 2026-11-26';
+const APP_VER = 'v61 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
