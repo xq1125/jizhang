@@ -902,13 +902,15 @@ function attachLongPress(el, cb) {
 }
 
 /* 导航栈：切账本/下钻时压入历史，返回键逐级退回而不是直接退出 */
+let navDepth = 0;
 function navLedger(lid, gameSel) {
   state.ledgerId = lid;
   state.gameSel = gameSel || null;
   reload();
-  try { history.pushState({ lid: state.ledgerId, gs: state.gameSel }, ''); } catch (e) { /* ignore */ }
+  try { history.pushState({ lid: state.ledgerId, gs: state.gameSel }, ''); navDepth += 1; } catch (e) { /* ignore */ }
 }
 window.addEventListener('popstate', (e) => {
+  navDepth = Math.max(0, navDepth - 1);
   const s = e.state;
   if (s && s.lid) {
     state.ledgerId = s.lid;
@@ -917,6 +919,19 @@ window.addEventListener('popstate', (e) => {
     reload();
   }
 });
+/* 荣耀/华为等系统返回手势在 Capacitor 壳里走 backButton 事件：自己弹栈，到顶才退出 */
+function setupBackHandling() {
+  const C = window.Capacitor;
+  if (!C || !C.Plugins || !C.Plugins.App) return;
+  C.Plugins.App.addListener('backButton', () => {
+    if (navDepth > 0) {
+      navDepth -= 1;
+      history.back();
+    } else {
+      C.Plugins.App.exitApp();
+    }
+  });
+}
 
 /* ---------------- 记一笔 ---------------- */
 const EXPAND_LIMIT = 10;
@@ -1912,7 +1927,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v57 · 2026-11-26';
+const APP_VER = 'v58 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -2176,6 +2191,7 @@ window.addEventListener('appinstalled', () => {
     clearMirrors();
     reload();
     try { history.replaceState({ lid: state.ledgerId, gs: null }, ''); } catch (e) { /* ignore */ }
+    setupBackHandling();
     if ('serviceWorker' in navigator && window.isSecureContext) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
       // 部署新版本后自动刷新；首次接管不刷新，避免多余重载
