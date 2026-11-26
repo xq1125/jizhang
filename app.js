@@ -411,31 +411,15 @@ function findLedgerLink(r) {
     const L = state.allLedgers.find((x) => x.id === r.mirror.ledgerId && !x.deleted);
     if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
   }
-  if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense') {
-    /* 1) 备注关键词：最长匹配优先，避免"星邱"同时命中两个账本 */
-    if (r.note) {
-      let best = null;
-      for (const L of state.ledgers) {
-        if (L.id === 'main') continue;
-        for (const kw of ledgerKeywords(L)) {
-          if (kw && r.note.includes(kw)) {
-            if (!best || kw.length > best.kw.length) best = { L, kw };
-          }
-        }
-      }
-      if (best) return { lid: best.L.id, date: null, label: '🔗 ' + best.L.name };
+  /* 链接只认：同一天 + 金额一致（等于小账本当天合计，或等于其中某一条） */
+  if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense' && state.dayIdx) {
+    for (const [k, e] of state.dayIdx) {
+      if (!k.endsWith('|' + r.date)) continue;
+      if (e.total === r.amount) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 合计' };
     }
-    /* 2) 同一天：金额等于小账本当天合计 */
-    if (state.dayIdx) {
-      for (const [k, e] of state.dayIdx) {
-        if (!k.endsWith('|' + r.date)) continue;
-        if (e.total === r.amount) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 合计' };
-      }
-      /* 3) 同一天：金额等于小账本某一条 */
-      for (const [k, e] of state.dayIdx) {
-        if (!k.endsWith('|' + r.date)) continue;
-        if (e.amounts.has(r.amount)) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 同额' };
-      }
+    for (const [k, e] of state.dayIdx) {
+      if (!k.endsWith('|' + r.date)) continue;
+      if (e.amounts.has(r.amount)) return { lid: e.L.id, date: r.date, label: '🔗 ' + e.L.name + ' 同额' };
     }
   }
   return null;
@@ -1176,7 +1160,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v32 · 2026-11-26';
+const APP_VER = 'v33 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
