@@ -55,7 +55,7 @@
       if (!resp.ok) throw new Error('读取云端账本内容失败 (HTTP ' + resp.status + ')');
       text = await resp.text();
     }
-    if (!text) return { records: [], categories: [], ledgers: [] };
+    if (!text) return { records: [], categories: [], ledgers: [], people: [] };
     let data;
     try { data = JSON.parse(text); }
     catch (e) { throw new Error('云端账本内容解析失败，已中止同步以保护数据'); }
@@ -63,6 +63,7 @@
       throw new Error('云端账本格式异常，已中止同步');
     }
     if (!Array.isArray(data.ledgers)) data.ledgers = [];
+    if (!Array.isArray(data.people)) data.people = [];
     return data;
   }
 
@@ -98,15 +99,17 @@
       records: local.records || [],
       categories: local.categories || [],
       ledgers: local.ledgers || [],
+      people: local.people || [],
     };
     if (!gistId) {
       gistId = await createLedger(payload, settings.token);
-      return { gistId, records: payload.records, categories: payload.categories, ledgers: payload.ledgers, created: true };
+      return { gistId, records: payload.records, categories: payload.categories, ledgers: payload.ledgers, people: payload.people, created: true };
     }
     const remote = await readLedger(gistId, settings.token);
     const records = mergeList(local.records, remote.records);
     const categories = mergeList(local.categories, remote.categories);
     const ledgers = mergeList(local.ledgers, remote.ledgers);
+    const people = mergeList(local.people, remote.people);
     /* 系统示例分类（seed-*）：任何一端删除即永久删除，防止新设备播种后复活 */
     const seedDel = {};
     for (const c of (local.categories || [])) {
@@ -126,8 +129,9 @@
     payload.records = records;
     payload.categories = categories;
     payload.ledgers = ledgers;
+    payload.people = people;
     await writeLedger(gistId, payload, settings.token);
-    return { gistId, records, categories, ledgers, created: false };
+    return { gistId, records, categories, ledgers, people, created: false };
   }
 
   const JZ = { syncNow, mergeList, findGist, readLedger, GIST_FILE };

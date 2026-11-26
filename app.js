@@ -43,13 +43,15 @@ function loadData() {
       records: Array.isArray(d.records) ? d.records : [],
       categories: Array.isArray(d.categories) ? d.categories : [],
       ledgers: Array.isArray(d.ledgers) ? d.ledgers : [],
+      people: Array.isArray(d.people) ? d.people : [],
     };
-  } catch (e) { return { records: [], categories: [], ledgers: [] }; }
+  } catch (e) { return { records: [], categories: [], ledgers: [], people: [] }; }
 }
 function persist() {
   try {
     localStorage.setItem(LS_DATA, JSON.stringify({
-      records: state.allRecords, categories: state.allCategories, ledgers: state.allLedgers,
+      records: state.allRecords, categories: state.allCategories,
+      ledgers: state.allLedgers, people: state.allPeople,
     }));
     return true;
   } catch (e) {
@@ -96,6 +98,7 @@ const state = {
   allRecords: [],
   allCategories: [],
   allLedgers: [],
+  allPeople: [],
   records: [],
   categories: [],
   ledgers: [],
@@ -108,6 +111,7 @@ function reload() {
   state.allRecords = d.records;
   state.allCategories = d.categories;
   state.allLedgers = d.ledgers;
+  state.allPeople = d.people;
   state.ledgers = state.allLedgers.filter((L) => !L.deleted);
   if (state.ledgerId !== VIRTUAL_GAMES && state.ledgerId !== VIRTUAL_TRAVELS && state.ledgerId !== VIRTUAL_OFFLINE
     && state.ledgerId !== VIRTUAL_OTHERS
@@ -220,6 +224,7 @@ async function doSync(kind) {
     state.allRecords = res.records;
     state.allCategories = res.categories;
     state.allLedgers = res.ledgers || [];
+    state.allPeople = res.people || [];
     persist();
     reload();
     if (kind === 'manual') { toast(res.created ? '已创建云端账本并同步 ✓' : '同步完成 ✓'); sfx('sync'); buzz(20); }
@@ -334,6 +339,19 @@ function renderHeader() {
   setNum(net, s.net);
   net.classList.toggle('neg', s.net < 0);
   updateSyncChip();
+  const hw = $('#hero-who');
+  if (hw) {
+    const curL = state.allLedgers.find((L) => L.id === state.ledgerId && !L.deleted);
+    const ids = curL && curL.id !== 'main' ? ledgerWhoIds(curL) : [];
+    if (curL && curL.id !== 'main' && ids.length) {
+      hw.innerHTML = ids.map((id) => { const p = personById(id); return `<span class="avatar" title="${esc(p.name)}">${avatarInner(p)}</span>`; }).join('');
+      hw.onclick = () => openWhoSheet(curL);
+      hw.hidden = false;
+    } else {
+      hw.hidden = true;
+      hw.innerHTML = '';
+    }
+  }
 }
 
 /* ---------------- 分组虚拟账本（旅游/线下） ---------------- */
@@ -364,11 +382,12 @@ function travelGroups() { return ledgerGroups(isTravel); }
 function offlineGroups() { return ledgerGroups(isOffline); }
 function othersGroups() { return ledgerGroups(isOthers); }
 function groupCardHtml(x) {
+  const whoNames = ledgerWhoIds(x.L).map((id) => { const p = personById(id); return p ? p.name : ''; }).filter(Boolean).join('、');
   return `<div class="rrow" data-gledger="${esc(x.L.id)}">
     <span class="rico">${esc(x.L.icon)}</span>
     <span class="rmid"><div class="rname">${esc(x.L.name)}</div>
-      <div class="rnote">${x.n} 笔${x.L.who ? ' · 👥 ' + esc(x.L.who) : ''}</div></span>
-    <button class="who-btn" data-who-for="${esc(x.L.id)}" title="同行人">${x.L.who ? '✏️' : '👥+'}</button>
+      <div class="rnote">${x.n} 笔${whoNames ? ' · 👥 ' + esc(whoNames) : ''}</div></span>
+    <button class="who-btn" data-who-for="${esc(x.L.id)}" title="同行人">${whoNames ? '✏️' : '👥+'}</button>
     <span class="ramt expense">¥${fmt(x.cents)}</span>
   </div>`;
 }
@@ -377,16 +396,7 @@ function bindWhoButtons(view) {
     b.onclick = (e) => {
       e.stopPropagation();
       const L = state.allLedgers.find((x) => x.id === b.dataset.whoFor && !x.deleted);
-      if (!L) return;
-      const w = prompt('和谁一起？（可留空）', L.who || '');
-      if (w === null) return;
-      L.who = w.trim().slice(0, 20);
-      L.updatedAt = Date.now();
-      persist();
-      reload();
-      scheduleSync();
-      sfx('tap');
-      toast(w.trim() ? '已记录同行人 👥' : '已清空同行人');
+      if (L) openWhoSheet(L);
     };
   });
 }
@@ -398,6 +408,189 @@ function groupTitle(lid) {
 }
 function groupsOf(lid) {
   return lid === VIRTUAL_TRAVELS ? travelGroups() : lid === VIRTUAL_OFFLINE ? offlineGroups() : othersGroups();
+}
+
+/* ---------------- 同伴系统 ---------------- */
+const PEOPLE_SEED = [['p-1', '韩佳韵', '🌸'], ['p-2', '董杰琳', '🍀'], ['p-3', 'gyff', '✨'],
+  ['p-4', 'ycx', '🎈'], ['p-5', '爸爸', '🐻'], ['p-6', '妈妈', '🌷']];
+const AVATAR_EMOJIS = ['🌸', '🍀', '✨', '🎈', '🐻', '🌷', '🦄', '🐱', '🐶', '⭐', '🌙', '🍒', '🐰', '🐼'];
+function personById(id) {
+  return state.allPeople.find((p) => p.id === id && !p.deleted) || null;
+}
+function avatarInner(p) {
+  if (!p) return '👤';
+  if (p.avatar && p.avatar.indexOf('data:') === 0) return `<img src="${p.avatar}" alt="">`;
+  return esc(p.avatar || '👤');
+}
+function ledgerWhoIds(L) {
+  if (L.whoIds && L.whoIds.length) return L.whoIds.filter((id) => personById(id));
+  if (L.who) {
+    const ids = [];
+    for (const n of L.who.split(/[、,，\s]+/)) {
+      const p = state.allPeople.find((x) => !x.deleted && x.name === n);
+      if (p) ids.push(p.id);
+    }
+    return ids;
+  }
+  return [];
+}
+
+function openWhoSheet(L) {
+  const sel = new Set(ledgerWhoIds(L));
+  const mask = document.createElement('div');
+  mask.className = 'sheet-mask';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  mask.appendChild(sheet);
+  document.body.appendChild(mask);
+  requestAnimationFrame(() => mask.classList.add('show'));
+  const close = () => {
+    mask.classList.remove('show');
+    setTimeout(() => mask.remove(), 200);
+  };
+  mask.onclick = (e) => { if (e.target === mask) close(); };
+  const draw = () => {
+    let html = `<div class="sheet-title">👥 ${esc(L.name)} 的同行人</div><div class="sheet-list">`;
+    for (const p of state.allPeople.filter((x) => !x.deleted)) {
+      html += `<div class="sheet-item${sel.has(p.id) ? ' on' : ''}" data-pid="${esc(p.id)}">
+        <span class="si-label"><span class="avatar sm">${avatarInner(p)}</span> ${esc(p.name)}</span>
+        <span class="si-radio${sel.has(p.id) ? ' checked' : ''}"></span></div>`;
+    }
+    html += `</div><div class="sheet-foot">
+      <button class="mini" id="who-add">＋ 新建同伴</button>
+      <button class="mini" id="who-clear">清空</button>
+      <button class="sheet-ok" id="who-ok">完成</button></div>`;
+    sheet.innerHTML = html;
+    sheet.querySelectorAll('[data-pid]').forEach((el) => {
+      el.onclick = () => {
+        const id = el.dataset.pid;
+        if (sel.has(id)) sel.delete(id); else sel.add(id);
+        sfx('tap');
+        draw();
+      };
+    });
+    sheet.querySelector('#who-add').onclick = () => addPerson().then((p) => { if (p) { sel.add(p.id); draw(); } });
+    sheet.querySelector('#who-clear').onclick = () => { sel.clear(); draw(); };
+    sheet.querySelector('#who-ok').onclick = () => {
+      L.whoIds = Array.from(sel);
+      delete L.who;
+      L.updatedAt = Date.now();
+      persist();
+      reload();
+      scheduleSync();
+      sfx('tap');
+      close();
+    };
+  };
+  draw();
+}
+
+function addPerson() {
+  return new Promise((resolve) => {
+    const name = prompt('同伴名字：');
+    if (!name || !name.trim()) { resolve(null); return; }
+    const opts = AVATAR_EMOJIS.map((e) => ({ id: e, label: e + '　用这个表情' })).concat([{ id: '__img', label: '📷 上传照片' }]);
+    openSheet('给 ' + name.trim() + ' 选个头像', opts, '', (pick) => {
+      const p = { id: genId(), name: name.trim().slice(0, 12), updatedAt: Date.now(), deleted: false };
+      const finish = () => {
+        p.avatar = p.avatar || '👤';
+        state.allPeople.push(p);
+        persist();
+        scheduleSync();
+        toast(`已添加同伴「${p.name}」`);
+        resolve(p);
+      };
+      if (pick === '__img') {
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = 'image/*';
+        inp.onchange = () => {
+          const file = inp.files && inp.files[0];
+          if (!file) { finish(); return; }
+          const img = new Image();
+          img.onload = () => {
+            const S = 96;
+            const c = document.createElement('canvas');
+            c.width = S; c.height = S;
+            const cx = c.getContext('2d');
+            const side = Math.min(img.width, img.height);
+            cx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+            try { p.avatar = c.toDataURL('image/jpeg', 0.75); } catch (e) { p.avatar = '📷'; }
+            URL.revokeObjectURL(img.src);
+            finish();
+          };
+          img.onerror = () => { p.avatar = '📷'; finish(); };
+          img.src = URL.createObjectURL(file);
+        };
+        inp.click();
+      } else {
+        p.avatar = pick || '👤';
+        finish();
+      }
+    });
+  });
+}
+
+function editPerson(id) {
+  const p = personById(id);
+  if (!p) return;
+  const name = prompt('同伴名字：', p.name);
+  if (name !== null && name.trim()) {
+    p.name = name.trim().slice(0, 12);
+    p.updatedAt = Date.now();
+    persist();
+    reload();
+    scheduleSync();
+  }
+  const opts = AVATAR_EMOJIS.map((e) => ({ id: e, label: e + '　用这个表情' })).concat([{ id: '__img', label: '📷 上传照片' }]);
+  openSheet('换头像', opts, '', (pick) => {
+    const done = () => { p.updatedAt = Date.now(); persist(); reload(); scheduleSync(); };
+    if (pick === '__img') {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.onchange = () => {
+        const file = inp.files && inp.files[0];
+        if (!file) { done(); return; }
+        const img = new Image();
+        img.onload = () => {
+          const S = 96;
+          const c = document.createElement('canvas');
+          c.width = S; c.height = S;
+          const cx = c.getContext('2d');
+          const side = Math.min(img.width, img.height);
+          cx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+          try { p.avatar = c.toDataURL('image/jpeg', 0.75); } catch (e) { /* keep old */ }
+          URL.revokeObjectURL(img.src);
+          done();
+        };
+        img.onerror = done;
+        img.src = URL.createObjectURL(file);
+      };
+      inp.click();
+    } else if (pick) {
+      p.avatar = pick;
+      done();
+    }
+  });
+}
+
+function deletePerson(id) {
+  const p = personById(id);
+  if (!p) return;
+  if (!confirm(`删除同伴「${p.name}」？各账本的同行人里也会移除。`)) return;
+  p.deleted = true;
+  p.updatedAt = Date.now();
+  for (const L of state.allLedgers) {
+    if (L.whoIds && L.whoIds.includes(id)) {
+      L.whoIds = L.whoIds.filter((x) => x !== id);
+      L.updatedAt = Date.now();
+    }
+  }
+  persist();
+  reload();
+  scheduleSync();
+  toast('已删除同伴');
 }
 
 /* ---------------- 游戏虚拟账本 ---------------- */
@@ -1606,7 +1799,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v45 · 2026-11-26';
+const APP_VER = 'v46 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -1620,6 +1813,13 @@ function renderSettings() {
       ${L.id === 'main' ? '' : `<button class="mini" data-who="${esc(L.id)}">同行人</button><button class="mini" data-ren="${esc(L.id)}">改名</button><button class="mini danger" data-del="${esc(L.id)}">删除</button>`}
     </div>`;
   }).join('');
+  const peopleRows = state.allPeople.filter((p) => !p.deleted).map((p) => `
+    <div class="mrow">
+      <span class="mico">${avatarInner(p)}</span>
+      <span class="mname">${esc(p.name)}</span>
+      <button class="mini" data-pedit="${esc(p.id)}">编辑</button>
+      <button class="mini danger" data-pdel="${esc(p.id)}">删除</button>
+    </div>`).join('') || '<div class="dp-empty">还没有同伴，点下面新建</div>';
   initExportState();
   view.innerHTML = `
     <div class="card">
@@ -1644,6 +1844,11 @@ function renderSettings() {
     <div class="card">
       <div class="chart-title">账本管理</div>
       ${ledgerRows}
+    </div>
+    <div class="card">
+      <div class="chart-title">同伴管理</div>
+      ${peopleRows}
+      <button class="mini" id="btn-add-person" style="margin-top:8px">＋ 新建同伴（可上传照片头像）</button>
     </div>
     <div class="card">
       <div class="chart-title">导出账单</div>
@@ -1744,17 +1949,13 @@ function renderSettings() {
   view.querySelectorAll('[data-who]').forEach((b) => {
     b.onclick = () => {
       const L = state.allLedgers.find((x) => x.id === b.dataset.who && !x.deleted);
-      if (!L) return;
-      const w = prompt('和谁一起去的？（可留空）', L.who || '');
-      if (w === null) return;
-      L.who = w.trim().slice(0, 20);
-      L.updatedAt = Date.now();
-      persist();
-      reload();
-      scheduleSync();
-      toast(w.trim() ? '已记录同行人' : '已清空同行人');
+      if (L) openWhoSheet(L);
     };
   });
+  view.querySelectorAll('[data-pedit]').forEach((b) => { b.onclick = () => editPerson(b.dataset.pedit); });
+  view.querySelectorAll('[data-pdel]').forEach((b) => { b.onclick = () => deletePerson(b.dataset.pdel); });
+  const bap = view.querySelector('#btn-add-person');
+  if (bap) bap.onclick = () => addPerson().then(() => render());
 }
 
 /* ---------------- 渲染入口 ---------------- */
@@ -1821,6 +2022,7 @@ window.addEventListener('appinstalled', () => {
     state.allRecords = d0.records;
     state.allCategories = d0.categories;
     state.allLedgers = d0.ledgers;
+    state.allPeople = d0.people;
     const h = location.hash.replace('#', '');
     if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
     const qs = new URLSearchParams(location.search);
@@ -1835,6 +2037,17 @@ window.addEventListener('appinstalled', () => {
       await doSync('boot');
     }
     let dirty = false;
+    if (!state.allPeople.length) {
+      const nowP = Date.now();
+      state.allPeople = PEOPLE_SEED.map((p) => ({ id: p[0], name: p[1], avatar: p[2], updatedAt: nowP, deleted: false }));
+      dirty = true;
+    }
+    for (const L of state.allLedgers) {
+      if (!L.whoIds && L.who) {
+        const ids = ledgerWhoIds(L);
+        if (ids.length) { L.whoIds = ids; dirty = true; }
+      }
+    }
     if (!state.allLedgers.length) {
       state.allLedgers = [{ id: 'main', name: '主账本', icon: '💼', updatedAt: Date.now(), deleted: false }];
       dirty = true;
