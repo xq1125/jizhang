@@ -80,6 +80,7 @@ body {
 .hero-who {
   display: flex; flex-direction: column; gap: 6px; align-items: center;
   cursor: pointer; flex: none; padding-top: 2px;
+  align-self: stretch;
 }
 .hw-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .hw-name {
@@ -87,7 +88,8 @@ body {
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .hw-ledger {
-  font-size: 10.5px; color: var(--faint); margin-top: 3px; white-space: nowrap;
+  font-size: 10.5px; color: var(--faint); white-space: nowrap;
+  margin-top: auto; padding-bottom: 1px;
 }
 .avatar {
   width: 34px; height: 34px; border-radius: 50%; background: var(--chip);
