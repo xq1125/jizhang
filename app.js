@@ -325,7 +325,8 @@ function renderHeader() {
   const main = state.ledgerId === 'main';
   const virtual = state.ledgerId === VIRTUAL_GAMES;
   const travel = state.ledgerId === VIRTUAL_TRAVELS;
-  $('#month-label').textContent = main ? monthLabel(state.month) : '全部时间';
+  $('#month-label').textContent = main ? monthLabel(state.month) + ' ▾' : '全部时间';
+  $('#month-label').style.cursor = main ? 'pointer' : 'default';
   $('#prev-month').style.display = main ? '' : 'none';
   $('#next-month').style.display = main ? '' : 'none';
   $('#this-month').style.display = main ? '' : 'none';
@@ -1926,7 +1927,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v59 · 2026-11-26';
+const APP_VER = 'v60 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -2096,6 +2097,57 @@ function render() {
   else renderSettings();
 }
 
+/* 年月双列选择器：点标题"2026年9月 ▾"弹出 */
+function openMonthPicker() {
+  if (state.ledgerId !== 'main') return;
+  const ms = monthList();
+  if (!ms.length) return;
+  const minY = Number(ms[0].slice(0, 4));
+  const maxY = Number(ms[ms.length - 1].slice(0, 4));
+  let selY = Number(state.month.slice(0, 4));
+  let selM = Number(state.month.slice(5, 7));
+  const mask = document.createElement('div');
+  mask.className = 'sheet-mask';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  mask.appendChild(sheet);
+  document.body.appendChild(mask);
+  requestAnimationFrame(() => mask.classList.add('show'));
+  const close = () => {
+    mask.classList.remove('show');
+    setTimeout(() => mask.remove(), 200);
+  };
+  mask.onclick = (e) => { if (e.target === mask) close(); };
+  const draw = () => {
+    let yh = '';
+    for (let y = minY; y <= maxY; y++) yh += `<div class="mp-item${y === selY ? ' on' : ''}" data-y="${y}">${y}年</div>`;
+    let mh = '';
+    for (let m = 1; m <= 12; m++) mh += `<div class="mp-item${m === selM ? ' on' : ''}" data-m="${m}">${m}月</div>`;
+    sheet.innerHTML = `<div class="sheet-title">选择年月 · 直达记账</div>
+      <div class="mp-body"><div class="mp-col">${yh}</div><div class="mp-col">${mh}</div></div>
+      <div class="sheet-foot"><button class="mini" id="mp-cancel">取消</button>
+      <button class="sheet-ok" id="mp-ok">跳到 ${selY}年${selM}月</button></div>`;
+    sheet.querySelectorAll('[data-y]').forEach((el) => {
+      el.onclick = () => { selY = Number(el.dataset.y); sfx('tap'); draw(); };
+    });
+    sheet.querySelectorAll('[data-m]').forEach((el) => {
+      el.onclick = () => { selM = Number(el.dataset.m); sfx('tap'); draw(); };
+    });
+    sheet.querySelector('#mp-cancel').onclick = close;
+    sheet.querySelector('#mp-ok').onclick = () => {
+      state.month = `${selY}-${pad2(selM)}`;
+      state.dayFilter = null;
+      close();
+      sfx('tap');
+      buzz(10);
+      reload();
+    };
+    const on = sheet.querySelector('.mp-item.on');
+    if (on) on.scrollIntoView({ block: 'center' });
+  };
+  draw();
+}
+
 /* ---------------- 事件 ---------------- */
 function shiftMonth(delta) {
   const [y, m] = state.month.split('-').map(Number);
@@ -2107,6 +2159,7 @@ function shiftMonth(delta) {
 
 $('#prev-month').onclick = () => shiftMonth(-1);
 $('#next-month').onclick = () => shiftMonth(1);
+$('#month-label').onclick = openMonthPicker;
 $('#this-month').onclick = () => { if (state.month !== thisMonth()) { state.month = thisMonth(); state.dayFilter = null; reload(); } };
 document.querySelectorAll('.tab').forEach((t) => {
   t.onclick = () => {

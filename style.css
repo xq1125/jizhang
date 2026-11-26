@@ -106,6 +106,19 @@ body {
   flex: 1; border: none; background: var(--ink); color: #fff;
   font-size: 14.5px; font-weight: 600; padding: 12px; border-radius: 12px; cursor: pointer;
 }
+
+/* ---------- 年月选择器 ---------- */
+.mp-body { display: flex; gap: 10px; height: 250px; }
+.mp-col {
+  flex: 1; overflow-y: auto; background: var(--bg);
+  border-radius: 12px; padding: 6px;
+}
+.mp-item {
+  padding: 10px 6px; text-align: center; font-size: 14px;
+  border-radius: 9px; cursor: pointer; color: var(--sub);
+}
+.mp-item.on { background: var(--card); color: var(--primary-dark); font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+.mp-item:active { background: var(--primary-pale); }
 .hero-k { font-size: 12px; color: var(--sub); letter-spacing: .05em; }
 .hero-v {
   font-size: 34px; font-weight: 700; margin-top: 6px;
