@@ -141,6 +141,7 @@ function computeStats() {
 
 /* ---------------- toast ---------------- */
 let toastTimer = null;
+function hideToast() { const t = $('#toast'); if (t) t.hidden = true; }
 function toast(msg, isErr = false) {
   const t = $('#toast');
   t.textContent = msg;
@@ -148,7 +149,28 @@ function toast(msg, isErr = false) {
   t.hidden = false;
   if (isErr) sfx('error');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 2400);
+  toastTimer = setTimeout(hideToast, 2400);
+}
+/* 带"撤销"按钮的提示，停留 3 秒 */
+function toastUndo(msg, label, fn, ms = 3000) {
+  const t = $('#toast');
+  t.textContent = '';
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const btn = document.createElement('button');
+  btn.className = 'toast-act';
+  btn.textContent = label;
+  btn.onclick = () => {
+    try { fn(); } catch (e) { toast('撤销失败：' + e.message, true); return; }
+    sfx('tap');
+    hideToast();
+  };
+  t.appendChild(span);
+  t.appendChild(btn);
+  t.className = 'toast';
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, ms);
 }
 
 /* ---------------- 同步 ---------------- */
@@ -542,15 +564,25 @@ function saveRecord() {
   const data = formPayload();
   if (!data) return;
   const now = Date.now();
-  if (state.form.editingId != null) {
-    const rec = Object.assign({}, state.allRecords.find((r) => r.id === state.form.editingId), data, { updatedAt: now });
+  const wasEdit = state.form.editingId != null;
+  let undo = null;
+  if (wasEdit) {
+    const prev = Object.assign({}, state.allRecords.find((r) => r.id === state.form.editingId));
+    const rec = Object.assign({}, prev, data, { updatedAt: now });
     const i = state.allRecords.findIndex((r) => r.id === rec.id);
     if (i >= 0) state.allRecords[i] = rec; else state.allRecords.push(rec);
-    toast('已更新');
+    undo = () => {
+      const cur = state.allRecords.find((r) => r.id === prev.id);
+      if (cur) Object.assign(cur, prev, { updatedAt: Date.now() });
+    };
     state.tab = 'list';
   } else {
-    state.allRecords.push(Object.assign({ id: genId(), ledgerId: state.ledgerId, deleted: false }, data, { updatedAt: now }));
-    toast('已记一笔 ✓');
+    const rec = Object.assign({ id: genId(), ledgerId: state.ledgerId, deleted: false }, data, { updatedAt: now });
+    state.allRecords.push(rec);
+    undo = () => {
+      const cur = state.allRecords.find((r) => r.id === rec.id);
+      if (cur) { cur.deleted = true; cur.updatedAt = Date.now(); }
+    };
   }
   sfx('save');
   buzz(35);
@@ -559,6 +591,7 @@ function saveRecord() {
   resetForm();
   reload();
   scheduleSync();
+  toastUndo(wasEdit ? '已更新' : '已记一笔 ✓', '撤销', undo);
 }
 
 function deleteRecord() {
@@ -571,7 +604,6 @@ function deleteRecord() {
     rec.updatedAt = Date.now();
     persist();
   }
-  toast('已删除');
   sfx('delete');
   buzz([25, 40, 25]);
   resetForm();
@@ -579,6 +611,10 @@ function deleteRecord() {
   rebuildMirrors();
   reload();
   scheduleSync();
+  toastUndo('已删除', '撤销', () => {
+    const r = state.allRecords.find((x) => x.id === id);
+    if (r) { r.deleted = false; r.updatedAt = Date.now(); }
+  });
 }
 
 /* ---------------- 明细 ---------------- */
@@ -592,6 +628,7 @@ function moveBarHtml() {
     <input type="date" id="mb-date" value="${esc(moveState.date)}" title="新日期，不填则不改">
     <select id="mb-ledger" title="目标账本"><option value="">账本不变</option>${opts}</select>
     <button id="mb-go">移动</button>
+    <button id="mb-del" class="mb-del">删除</button>
   </div>`;
 }
 
@@ -601,14 +638,14 @@ function applyMove() {
   if (!nd && !nl) { toast('先选个新日期或目标账本', true); return; }
   if (!state.selected.size) { toast('先勾选要移动的记录', true); return; }
   const now = Date.now();
-  let cnt = 0;
+  const snaps = [];
   for (const id of state.selected) {
     const r = state.allRecords.find((x) => x.id === id);
     if (!r || r.deleted || r.mirror) continue;
+    snaps.push({ id: r.id, date: r.date, ledgerId: r.ledgerId || 'main' });
     if (nd) r.date = nd;
     if (nl) r.ledgerId = nl;
     r.updatedAt = now;
-    cnt++;
   }
   persist();
   rebuildMirrors();
@@ -617,9 +654,50 @@ function applyMove() {
   moveState = { date: '', ledger: '' };
   reload();
   scheduleSync();
-  toast(`已移动 ${cnt} 条`);
   sfx('save');
   buzz(35);
+  toastUndo(`已移动 ${snaps.length} 条`, '撤销', () => {
+    const t = Date.now();
+    for (const sp of snaps) {
+      const r = state.allRecords.find((x) => x.id === sp.id);
+      if (r) { r.date = sp.date; r.ledgerId = sp.ledgerId; r.updatedAt = t; }
+    }
+    persist();
+    rebuildMirrors();
+    reload();
+    scheduleSync();
+  });
+}
+
+function applyBatchDelete() {
+  if (!state.selected.size) { toast('先勾选要删除的记录', true); return; }
+  const targets = [];
+  for (const id of state.selected) {
+    const r = state.allRecords.find((x) => x.id === id);
+    if (r && !r.deleted && !r.mirror) targets.push(r);
+  }
+  if (!targets.length) return;
+  if (!confirm(`确定删除选中的 ${targets.length} 条记录？`)) return;
+  if (targets.length > 5 && !confirm(`再次确认：真的要删除这 ${targets.length} 条记录吗？\n（删除后 3 秒内还可撤销）`)) return;
+  const now = Date.now();
+  targets.forEach((r) => { r.deleted = true; r.updatedAt = now; });
+  persist();
+  rebuildMirrors();
+  state.multiSel = false;
+  state.selected.clear();
+  moveState = { date: '', ledger: '' };
+  reload();
+  scheduleSync();
+  sfx('delete');
+  buzz([25, 40, 25]);
+  toastUndo(`已删除 ${targets.length} 条`, '撤销', () => {
+    const t = Date.now();
+    targets.forEach((r) => { r.deleted = false; r.updatedAt = t; });
+    persist();
+    rebuildMirrors();
+    reload();
+    scheduleSync();
+  });
 }
 
 function renderList() {
@@ -698,6 +776,7 @@ function renderList() {
     view.querySelector('#mb-date').oninput = (e) => { moveState.date = e.target.value; };
     view.querySelector('#mb-ledger').onchange = (e) => { moveState.ledger = e.target.value; };
     view.querySelector('#mb-go').onclick = applyMove;
+    view.querySelector('#mb-del').onclick = applyBatchDelete;
   } else {
     view.querySelectorAll('.rrow').forEach((el) => {
       el.onclick = () => {
