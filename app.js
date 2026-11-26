@@ -344,7 +344,7 @@ function renderHeader() {
     const curL = state.allLedgers.find((L) => L.id === state.ledgerId && !L.deleted);
     const ids = curL && curL.id !== 'main' ? ledgerWhoIds(curL) : [];
     if (curL && curL.id !== 'main' && ids.length) {
-      hw.innerHTML = ids.map((id) => { const p = personById(id); return `<span class="avatar" title="${esc(p.name)}">${avatarInner(p)}</span>`; }).join('');
+      hw.innerHTML = ids.map((id) => { const p = personById(id); return `<span class="hw-item"><span class="avatar" title="${esc(p.name)}">${avatarInner(p)}</span><span class="hw-name">${esc(p.name)}</span></span>`; }).join('');
       hw.onclick = () => openWhoSheet(curL);
       hw.hidden = false;
     } else {
@@ -1805,7 +1805,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v47 · 2026-11-26';
+const APP_VER = 'v48 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
