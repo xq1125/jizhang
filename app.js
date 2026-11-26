@@ -278,9 +278,15 @@ function deleteLedger(id) {
 }
 
 /* ---------------- 记一笔 ---------------- */
+const EXPAND_LIMIT = 10;
+let catsExpanded = false;
+
 function renderAdd() {
   const f = state.form;
   const cats = state.categories.filter((c) => c.type === f.type);
+  if (f.categoryId && cats.findIndex((c) => c.id === f.categoryId) >= EXPAND_LIMIT) catsExpanded = true;
+  const collapsible = cats.length > EXPAND_LIMIT;
+  const shown = (collapsible && !catsExpanded) ? cats.slice(0, EXPAND_LIMIT) : cats;
   const editing = f.editingId != null;
   const view = $('#view');
   view.innerHTML = `
@@ -294,10 +300,14 @@ function renderAdd() {
         <input id="amount" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${esc(f.amount)}">
       </div>
       <div class="cat-grid">
-        ${cats.map((c) => `
+        ${shown.map((c) => `
           <button class="cat ${c.id === f.categoryId ? 'sel' : ''}" data-cat="${esc(c.id)}">
             <span class="cico">${esc(c.icon)}</span><span class="cname">${esc(c.name)}</span>
           </button>`).join('')}
+        ${collapsible ? `
+          <button class="cat cat-more" id="cat-more">
+            <span class="cico">${catsExpanded ? '∧' : '∨'}</span><span class="cname">${catsExpanded ? '收起' : '展开 ' + (cats.length - EXPAND_LIMIT) + '个'}</span>
+          </button>` : ''}
         <button class="cat add-cat" data-addcat="1">
           <span class="cico">＋</span><span class="cname">新分类</span>
         </button>
@@ -319,6 +329,8 @@ function renderAdd() {
   view.querySelectorAll('.cat[data-cat]').forEach((el) => {
     el.onclick = () => { f.categoryId = el.dataset.cat; render(); };
   });
+  const more = view.querySelector('#cat-more');
+  if (more) more.onclick = () => { catsExpanded = !catsExpanded; render(); };
   view.querySelector('[data-addcat]').onclick = addCategory;
   view.querySelector('#amount').oninput = (e) => { f.amount = e.target.value; };
   view.querySelector('#f-date').onchange = (e) => { f.date = e.target.value; };
@@ -865,36 +877,42 @@ function showInstallBanner() {
 }
 
 /* ---------------- 启动 ---------------- */
-try {
-  settings = loadSettings();
-  saveSettings();
-  const d0 = loadData();
-  state.allRecords = d0.records;
-  state.allCategories = d0.categories;
-  state.allLedgers = d0.ledgers;
-  let dirty = false;
-  if (!state.allLedgers.length) {
-    state.allLedgers = [{ id: 'main', name: '主账本', icon: '💼', updatedAt: Date.now(), deleted: false }];
-    dirty = true;
+(async function boot() {
+  try {
+    settings = loadSettings();
+    saveSettings();
+    const d0 = loadData();
+    state.allRecords = d0.records;
+    state.allCategories = d0.categories;
+    state.allLedgers = d0.ledgers;
+    const h = location.hash.replace('#', '');
+    if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
+    const lp = new URLSearchParams(location.search).get('l');
+    if (lp) state.ledgerId = lp;
+    if (settings.token) {
+      // 已配置同步：先拉云端账本，避免把示例分类播种进已有数据（防止复活）
+      await doSync('boot');
+    }
+    let dirty = false;
+    if (!state.allLedgers.length) {
+      state.allLedgers = [{ id: 'main', name: '主账本', icon: '💼', updatedAt: Date.now(), deleted: false }];
+      dirty = true;
+    }
+    if (!state.allCategories.length) {
+      const now = Date.now();
+      state.allCategories = SEED_CATEGORIES.map((c, i) => ({
+        id: 'seed-' + (i + 1), name: c[0], type: c[1], icon: c[2], updatedAt: now, deleted: false,
+      }));
+      dirty = true;
+    }
+    if (dirty) persist();
+    reload();
+    showInstallBanner();
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  } catch (e) {
+    toast('初始化失败：' + e.message, true);
+    try { reload(); } catch (_) { /* ignore */ }
   }
-  if (!state.allCategories.length) {
-    const now = Date.now();
-    state.allCategories = SEED_CATEGORIES.map((c, i) => ({
-      id: 'seed-' + (i + 1), name: c[0], type: c[1], icon: c[2], updatedAt: now, deleted: false,
-    }));
-    dirty = true;
-  }
-  if (dirty) persist();
-  const h = location.hash.replace('#', '');
-  if (['add', 'list', 'stats', 'set'].includes(h)) state.tab = h;
-  const lp = new URLSearchParams(location.search).get('l');
-  if (lp) state.ledgerId = lp;
-  reload();
-  showInstallBanner();
-  if ('serviceWorker' in navigator && window.isSecureContext) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  }
-  if (settings.token) doSync('boot');
-} catch (e) {
-  toast('初始化失败：' + e.message, true);
-}
+})();

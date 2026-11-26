@@ -208,6 +208,8 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
 .cat.sel .cico { border-color: var(--ink); background: #fff; }
 .cat.sel .cname { color: var(--ink); font-weight: 600; }
 .cat.add-cat .cico { border: 1.5px dashed var(--faint); background: transparent; color: var(--faint); font-size: 18px; }
+.cat.cat-more .cico { border: 1.5px dashed var(--faint); background: transparent; color: var(--sub); font-size: 15px; }
+.cat.cat-more:active .cico { border-color: var(--ink); color: var(--ink); }
 
 .frow { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .frow:last-of-type { border-bottom: none; }
