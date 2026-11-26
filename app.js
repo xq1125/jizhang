@@ -1225,21 +1225,25 @@ function deleteRecord() {
   });
 }
 
-/* 主账本视图：带 tripId 的支出按"账本+天"合并成一行总和；其余正常显示 */
+/* 主账本视图：凡能连到小账本的支出（标签或金额匹配），按"账本+天"合并成一行总和 */
 function dayRowsHtml(list, ms) {
   let html = '';
   const mainView = state.ledgerId === 'main' && !ms;
   const agg = new Map();
+  const linked = new Set();
   if (mainView) {
     for (const r of list) {
-      if (r.tripId && !r.mirror && r.type === 'expense') {
-        const e = agg.get(r.tripId) || { cents: 0, n: 0 };
-        e.cents += r.amount; e.n += 1; agg.set(r.tripId, e);
+      if (r.mirror || r.type !== 'expense') continue;
+      const lk = findLedgerLink(r);
+      if (lk && lk.lid) {
+        linked.add(r.id);
+        const e = agg.get(lk.lid) || { cents: 0, n: 0 };
+        e.cents += r.amount; e.n += 1; agg.set(lk.lid, e);
       }
     }
   }
   for (const r of list) {
-    if (mainView && r.tripId && !r.mirror && r.type === 'expense') continue;
+    if (mainView && linked.has(r.id)) continue;
     const link = findLedgerLink(r);
     const isMirror = !!r.mirror;
     const picked = ms && state.selected.has(r.id);
@@ -1252,10 +1256,10 @@ function dayRowsHtml(list, ms) {
     </div>`;
   }
   if (mainView) {
-    for (const [tid, e] of agg) {
-      const T = state.allLedgers.find((x) => x.id === tid && !x.deleted);
+    for (const [lid, e] of agg) {
+      const T = state.allLedgers.find((x) => x.id === lid && !x.deleted);
       if (!T) continue;
-      html += `<div class="rrow" data-tripjump="${esc(tid)}" data-tripdate="${esc(list[0].date)}">
+      html += `<div class="rrow" data-tripjump="${esc(lid)}" data-tripdate="${esc(list[0].date)}">
         <span class="rico">${esc(T.icon)}</span>
         <span class="rmid"><div class="rname">${esc(T.name)}</div>
           <div class="rnote">${e.n} 笔明细 ›</div></span>
@@ -1907,7 +1911,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v55 · 2026-11-26';
+const APP_VER = 'v56 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
