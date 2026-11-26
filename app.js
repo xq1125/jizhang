@@ -880,6 +880,7 @@ function jlinkHtml(link) {
 
 /* 长按手势：550ms 触发，移动或提前抬手则取消 */
 let lpFired = false;
+let swipeTs = 0;
 function attachLongPress(el, cb) {
   let timer = null;
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
@@ -939,7 +940,7 @@ function renderAdd() {
   const rows = dayRowsHtml(dayRecs, false);
   view.innerHTML = `
     <div class="card cal-card">
-      <div class="chart-title">日历总览 · 点某天看当天、记账</div>
+      <div class="chart-title">日历总览 · 点某天看当天、记账（左右滑换月）</div>
       ${calendarHtml(state.selDate)}
     </div>
     <div class="card">
@@ -952,10 +953,34 @@ function renderAdd() {
     </div>`;
   bindXref(view);
   view.querySelectorAll('.cal-cell[data-day]').forEach((el) => {
-    el.onclick = () => { state.selDate = el.dataset.day; sfx('tap'); buzz(10); render(); };
+    el.onclick = () => {
+      if (Date.now() - swipeTs < 500) return;
+      state.selDate = el.dataset.day; sfx('tap'); buzz(10); render();
+    };
   });
   bindTripJumps(view);
   bindJLinks(view);
+
+  /* 左右滑动切换月份 */
+  const calCard = view.querySelector('.cal-card');
+  if (calCard) {
+    let sx = 0, sy = 0, tracking = false;
+    calCard.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      sx = t.clientX; sy = t.clientY; tracking = true;
+    }, { passive: true });
+    calCard.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        swipeTs = Date.now();
+        sfx('tap'); buzz(8);
+        shiftMonth(dx < 0 ? 1 : -1);
+      }
+    }, { passive: true });
+  }
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
   view.querySelectorAll('.rrow').forEach((el) => {
     el.onclick = () => {
@@ -1864,7 +1889,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v53 · 2026-11-26';
+const APP_VER = 'v54 · 2026-11-26';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
