@@ -358,6 +358,22 @@ function renderHeader() {
   }
 }
 
+function addLedgerToGroup(group) {
+  const name = prompt('新账本名称（如：国庆旅行、装修）：');
+  if (!name || !name.trim()) return;
+  const icon = (prompt('选一个图标（表情，可留空）：', '🗂️') || '🗂️').trim() || '🗂️';
+  const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8),
+    updatedAt: Date.now(), createdAt: Date.now(), deleted: false, group };
+  const who = prompt('和谁一起？（可留空）', '');
+  if (who && who.trim()) L.who = who.trim().slice(0, 20);
+  state.allLedgers.push(L);
+  if (!persist()) return;
+  navLedger(L.id);
+  scheduleSync();
+  sfx('coin');
+  toast(`已创建账本「${L.name}」`);
+}
+
 /* ---------------- 分组虚拟账本（旅游/线下） ---------------- */
 const VIRTUAL_TRAVELS = 'virtual-travels';
 const VIRTUAL_OFFLINE = 'virtual-offline';
@@ -944,10 +960,12 @@ function renderAdd() {
       <div class="card">
         <div class="chart-title">${groupTitle(state.ledgerId)}</div>
         ${gs.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}
+        <button class="mini" id="btn-group-add" style="margin:10px 0 4px">＋ 新增小账本</button>
       </div>`;
     view.querySelectorAll('[data-gledger]').forEach((el) => {
       el.onclick = () => { sfx('tap'); navLedger(el.dataset.gledger); };
     });
+    view.querySelector('#btn-group-add').onclick = () => addLedgerToGroup(state.ledgerId);
     bindWhoButtons(view);
     return;
   }
@@ -1491,11 +1509,12 @@ function renderList() {
   if (state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE || state.ledgerId === VIRTUAL_OTHERS) {
     const ts = groupsOf(state.ledgerId);
     const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
-    view.innerHTML = tools0 + `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}</div>`;
+    view.innerHTML = tools0 + `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}<button class="mini" id="btn-group-add" style="margin:10px 0 4px">＋ 新增小账本</button></div>`;
     bindMultiToggle(view);
     view.querySelectorAll('[data-gledger]').forEach((el) => {
       el.onclick = () => { sfx('tap'); navLedger(el.dataset.gledger); };
     });
+    view.querySelector('#btn-group-add').onclick = () => addLedgerToGroup(state.ledgerId);
     bindWhoButtons(view);
     return;
   }
@@ -2027,7 +2046,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v63 · 2026-11-27';
+const APP_VER = 'v64 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
