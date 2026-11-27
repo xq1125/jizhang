@@ -1901,9 +1901,7 @@ function renderList() {
   let filterBar = '';
   if ((grpNow && grpNow.kind !== 'cat') || state.ledgerId === VIRTUAL_TRAVELS || state.ledgerId === VIRTUAL_OFFLINE || state.ledgerId === VIRTUAL_OTHERS) {
     const ts = groupsOf(state.ledgerId);
-    const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
-    view.innerHTML = tools0 + `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}<button class="mini" id="btn-group-add" style="margin:10px 0 4px">＋ 新增小账本</button></div>`;
-    bindMultiToggle(view);
+    view.innerHTML = `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}<button class="mini" id="btn-group-add" style="margin:10px 0 4px">＋ 新增小账本</button></div>`;
     view.querySelectorAll('[data-gledger]').forEach((el) => {
       el.onclick = () => {
         if (el.classList.contains('del-armed')) { el.classList.remove('del-armed'); return; }
@@ -1917,9 +1915,7 @@ function renderList() {
   }
   if (state.ledgerId === VIRTUAL_GAMES && !state.gameSel) {
     const gs = gameGroups();
-    const tools0 = `<div class="list-tools"><button class="mini" id="btn-multi">☑ 多选移动</button></div>`;
-    view.innerHTML = tools0 + `<div class="card list-card">${gs.map(gameCardHtml).join('') || '<div class="dp-empty">还没有游戏开销</div>'}</div>`;
-    bindMultiToggle(view);
+    view.innerHTML = `<div class="card list-card">${gs.map(gameCardHtml).join('') || '<div class="dp-empty">还没有游戏开销</div>'}</div>`;
     view.querySelectorAll('[data-game]').forEach((el) => {
       el.onclick = () => { sfx('tap'); navLedger(VIRTUAL_GAMES, el.dataset.game); };
     });
@@ -2446,7 +2442,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v77 · 2026-11-27';
+const APP_VER = 'v78 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
