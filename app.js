@@ -497,8 +497,22 @@ function groupCardHtml(x) {
     <span class="rmid"><div class="rname">${esc(x.L.name)}</div>
       <div class="rnote">${x.n} 笔${whoNames ? ' · 👥 ' + esc(whoNames) : ''}</div></span>
     <button class="who-btn" data-who-for="${esc(x.L.id)}" title="同行人">${whoNames ? '✏️' : '👥+'}</button>
+    <button class="row-del" data-gdel="${esc(x.L.id)}" title="删除账本">✕</button>
     <span class="ramt expense">¥${fmt(x.cents)}</span>
   </div>`;
+}
+function bindGroupCardDelete(view) {
+  view.querySelectorAll('[data-gledger]').forEach((el) => {
+    attachLongPress(el, () => {
+      view.querySelectorAll('.rrow.del-armed').forEach((x) => x.classList.remove('del-armed'));
+      el.classList.add('del-armed');
+      buzz(15);
+      sfx('tap');
+    });
+  });
+  view.querySelectorAll('[data-gdel]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); deleteLedger(b.dataset.gdel); };
+  });
 }
 function bindWhoButtons(view) {
   view.querySelectorAll('[data-who-for]').forEach((b) => {
@@ -1224,10 +1238,14 @@ function renderAdd() {
         <button class="mini" id="btn-group-add" style="margin:10px 0 4px">＋ 新增小账本</button>
       </div>`;
     view.querySelectorAll('[data-gledger]').forEach((el) => {
-      el.onclick = () => { sfx('tap'); navLedger(el.dataset.gledger); };
+      el.onclick = () => {
+        if (el.classList.contains('del-armed')) { el.classList.remove('del-armed'); return; }
+        sfx('tap'); navLedger(el.dataset.gledger);
+      };
     });
     view.querySelector('#btn-group-add').onclick = () => addLedgerToGroup(state.ledgerId);
     bindWhoButtons(view);
+    bindGroupCardDelete(view);
     return;
   }
   if (state.ledgerId === VIRTUAL_GAMES) {
@@ -1800,10 +1818,14 @@ function renderList() {
     view.innerHTML = tools0 + `<div class="card list-card">${ts.map(groupCardHtml).join('') || '<div class="dp-empty">还没有相关账本</div>'}<button class="mini" id="btn-group-add" style="margin:10px 0 4px">＋ 新增小账本</button></div>`;
     bindMultiToggle(view);
     view.querySelectorAll('[data-gledger]').forEach((el) => {
-      el.onclick = () => { sfx('tap'); navLedger(el.dataset.gledger); };
+      el.onclick = () => {
+        if (el.classList.contains('del-armed')) { el.classList.remove('del-armed'); return; }
+        sfx('tap'); navLedger(el.dataset.gledger);
+      };
     });
     view.querySelector('#btn-group-add').onclick = () => addLedgerToGroup(state.ledgerId);
     bindWhoButtons(view);
+    bindGroupCardDelete(view);
     return;
   }
   if (state.ledgerId === VIRTUAL_GAMES && !state.gameSel) {
@@ -2337,7 +2359,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v73 · 2026-11-27';
+const APP_VER = 'v74 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
