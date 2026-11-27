@@ -860,6 +860,10 @@ function findLedgerLink(r) {
     const L = state.allLedgers.find((x) => x.id === r.tripId && !x.deleted);
     if (L) return { lid: L.id, date: r.date, label: '🔗 ' + L.name };
   }
+  if (r.linkLid) {
+    const L = state.allLedgers.find((x) => x.id === r.linkLid && !x.deleted);
+    if (L) return { lid: L.id, date: r.date, label: '🔗 ' + L.name };
+  }
   /* 链接只认：同一天 + 金额一致（等于小账本当天合计，或等于其中某一条） */
   if (state.ledgerId === 'main' && !r.mirror && r.type === 'expense' && state.dayIdx) {
     for (const [k, e] of state.dayIdx) {
@@ -2160,7 +2164,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v66 · 2026-11-27';
+const APP_VER = 'v67 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
