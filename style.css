@@ -119,6 +119,16 @@ body {
 }
 .mp-item.on { background: var(--card); color: var(--primary-dark); font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
 .mp-item:active { background: var(--primary-pale); }
+
+/* ---------- 管理分类 ---------- */
+.mg-icon { font-size: 22px; cursor: pointer; padding: 2px 8px; border-radius: 8px; flex: none; }
+.mg-icon:active { background: var(--chip); }
+.mg-name { flex: 1; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mg-tag { font-style: normal; font-size: 10.5px; color: var(--faint); margin-left: 6px; }
+.mg-ops { display: flex; gap: 6px; flex: none; align-items: center; }
+.mg-move { display: none; }
+.mg-row.sorting .mg-move { display: inline-flex; }
+.mg-row.sorting { background: #eef0fa; }
 .hero-k { font-size: 12px; color: var(--sub); letter-spacing: .05em; }
 .hero-v {
   font-size: 34px; font-weight: 700; margin-top: 6px;

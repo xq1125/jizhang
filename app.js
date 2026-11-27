@@ -393,13 +393,13 @@ function groupMeta(vid) {
 }
 function ensureBuiltinMeta() {
   let dirty = false;
-  for (const b of BUILTIN_GROUPS) {
+  BUILTIN_GROUPS.forEach((b, i) => {
     if (!state.allLedgers.some((x) => x.id === b.id)) {
-      state.allLedgers.push({ id: b.id, name: b.name, icon: b.icon, builtin: true,
+      state.allLedgers.push({ id: b.id, name: b.name, icon: b.icon, builtin: true, ord: i,
         updatedAt: Date.now(), createdAt: Date.now(), deleted: false });
       dirty = true;
     }
-  }
+  });
   if (dirty) persist();
 }
 function customGroups() {
@@ -417,7 +417,8 @@ function addNewGroup() {
     if (!name || !name.trim()) return;
     const icon = (prompt('图标（表情，可留空）：', '🗂️') || '🗂️').trim() || '🗂️';
     const G = { id: 'grp-' + genId(), name: name.trim().slice(0, 10), icon: icon.slice(0, 8),
-      kind, updatedAt: Date.now(), createdAt: Date.now(), deleted: false };
+      kind, updatedAt: Date.now(), createdAt: Date.now(), deleted: false,
+      ord: Math.max(0, ...state.allLedgers.filter((x) => !x.deleted && (x.builtin || x.id.startsWith('grp-'))).map((x) => x.ord ?? 0)) + 1 };
     const finish = () => {
       state.allLedgers.push(G);
       if (!persist()) return;
@@ -781,17 +782,11 @@ function renderLedgers() {
   const plain = state.ledgers.filter((L) => (L.id === 'main' || (!isTravel(L) && !isOffline(L) && !isOthers(L))) && !L.id.startsWith('grp-') && !L.builtin);
   let chips = plain.map((L) => `
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('');
-  const groupChip = (vid, label) => `<button class="lchip ${(state.ledgerId === vid || inGroup === vid) ? 'on' : ''}" data-ledger="${vid}">${label}</button>`;
   const curChip = inGroup ? `<button class="lchip on" data-ledger="${esc(cur.id)}">${esc(cur.icon)} ${esc(cur.name)}</button>` : '';
-  const gmT = groupMeta(VIRTUAL_TRAVELS); const gmO = groupMeta(VIRTUAL_OFFLINE); const gmE = groupMeta(VIRTUAL_OTHERS); const gmG = groupMeta(VIRTUAL_GAMES);
-  chips += groupChip(VIRTUAL_TRAVELS, `${esc(gmT.icon)} ${esc(gmT.name)}`) + (inGroup === VIRTUAL_TRAVELS ? curChip : '');
-  chips += groupChip(VIRTUAL_OFFLINE, `${esc(gmO.icon)} ${esc(gmO.name)}`) + (inGroup === VIRTUAL_OFFLINE ? curChip : '');
-  chips += groupChip(VIRTUAL_OTHERS, `${esc(gmE.icon)} ${esc(gmE.name)}`) + (inGroup === VIRTUAL_OTHERS ? curChip : '');
-  for (const G of customGroups()) {
+  for (const G of managedGroups()) {
     chips += `<button class="lchip ${(state.ledgerId === G.id || inGroup === G.id) ? 'on' : ''}" data-ledger="${esc(G.id)}">${esc(G.icon)} ${esc(G.name)}</button>`;
     if (inGroup === G.id) chips += curChip;
   }
-  chips += `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">${esc(gmG.icon)} ${esc(gmG.name)}</button>`;
   chips += `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新分类</button>`;
   chips += `<button class="lchip lchip-add" id="btn-manage-groups">⚙️ 管理</button>`;
   el.innerHTML = chips;
@@ -826,33 +821,100 @@ function disarmChip(b) {
   if (b.dataset.orig) b.textContent = b.dataset.orig;
   b.classList.remove('del-armed');
 }
+function managedGroups() {
+  return state.allLedgers
+    .filter((L) => !L.deleted && (L.builtin || L.id.startsWith('grp-')))
+    .sort((a, b) => (a.ord ?? 99) - (b.ord ?? 99));
+}
+function saveGroupsMeta() {
+  persist();
+  reload();
+  scheduleSync();
+}
 function openManageGroups() {
-  const items = BUILTIN_GROUPS.map((b) => {
-    const m = groupMeta(b.id);
-    return { id: b.id, label: `${m.icon} ${m.name}（内置）` };
-  }).concat(customGroups().map((G) => ({ id: G.id, label: G.icon + ' ' + G.name })));
-  openSheet('管理分类 · 选一个', items, '', (id) => {
-    const builtin = BUILTIN_GROUPS.some((b) => b.id === id);
-    const acts = [{ id: 'rename', label: '✏️ 改名 / 换图标' }];
-    if (!builtin) acts.push({ id: 'del', label: '🗑 删除分类' });
-    openSheet(groupMeta(id).name, acts, '', (act) => {
-      const L = state.allLedgers.find((x) => x.id === id && !x.deleted);
-      if (!L) return;
-      if (act === 'rename') {
-        const name = prompt('分类名称：', L.name);
-        if (name !== null && name.trim()) L.name = name.trim().slice(0, 10);
-        const icon = prompt('图标（表情）：', L.icon);
-        if (icon !== null && icon.trim()) L.icon = icon.trim().slice(0, 8);
-        L.updatedAt = Date.now();
-        persist();
-        reload();
-        scheduleSync();
-        toast('已更新分类');
-      } else if (act === 'del') {
-        deleteGroup(id);
-      }
+  const mask = document.createElement('div');
+  mask.className = 'sheet-mask';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  mask.appendChild(sheet);
+  document.body.appendChild(mask);
+  requestAnimationFrame(() => mask.classList.add('show'));
+  const close = () => {
+    mask.classList.remove('show');
+    setTimeout(() => mask.remove(), 200);
+  };
+  mask.onclick = (e) => { if (e.target === mask) close(); };
+  const draw = () => {
+    const groups = managedGroups();
+    let html = `<div class="sheet-title">管理分类 · 点图标换图 · 点✏️改名 · 长按排序</div><div class="sheet-list">`;
+    groups.forEach((G, i) => {
+      html += `<div class="sheet-item mg-row" data-mgrid="${esc(G.id)}">
+        <span class="mg-icon" data-mgicon="${esc(G.id)}">${esc(G.icon)}</span>
+        <span class="mg-name">${esc(G.name)}${G.builtin ? '<em class="mg-tag">内置</em>' : ''}</span>
+        <span class="mg-ops">
+          <button class="mini mg-move" data-mgup="${esc(G.id)}" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="mini mg-move" data-mgdn="${esc(G.id)}" ${i === groups.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="mini" data-mgren="${esc(G.id)}">✏️</button>
+          ${G.builtin ? '' : `<button class="mini danger" data-mgdel="${esc(G.id)}">🗑</button>`}
+        </span></div>`;
     });
-  });
+    html += `</div><button class="sheet-cancel" id="mg-close">关闭</button>`;
+    sheet.innerHTML = html;
+    sheet.querySelector('#mg-close').onclick = close;
+    sheet.querySelectorAll('[data-mgicon]').forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const G = state.allLedgers.find((x) => x.id === el.dataset.mgicon && !x.deleted);
+        if (!G) return;
+        pickIcon(G.icon, (icon) => { G.icon = icon; G.updatedAt = Date.now(); saveGroupsMeta(); draw(); });
+      };
+    });
+    sheet.querySelectorAll('[data-mgren]').forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const G = state.allLedgers.find((x) => x.id === el.dataset.mgren && !x.deleted);
+        if (!G) return;
+        const name = prompt('分类名称：', G.name);
+        if (name !== null && name.trim()) {
+          G.name = name.trim().slice(0, 10);
+          G.updatedAt = Date.now();
+          saveGroupsMeta();
+          draw();
+          toast('已改名');
+        }
+      };
+    });
+    sheet.querySelectorAll('[data-mgdel]').forEach((el) => {
+      el.onclick = (e) => { e.stopPropagation(); deleteGroup(el.dataset.mgdel); draw(); };
+    });
+    const move = (id, dir) => {
+      const gs = managedGroups();
+      const i = gs.findIndex((x) => x.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= gs.length) return;
+      const a = gs[i].ord ?? i; const b = gs[j].ord ?? j;
+      gs[i].ord = b; gs[j].ord = a;
+      gs[i].updatedAt = Date.now(); gs[j].updatedAt = Date.now();
+      sfx('tap'); buzz(8);
+      saveGroupsMeta();
+      draw();
+    };
+    sheet.querySelectorAll('[data-mgup]').forEach((el) => {
+      el.onclick = (e) => { e.stopPropagation(); move(el.dataset.mgup, -1); };
+    });
+    sheet.querySelectorAll('[data-mgdn]').forEach((el) => {
+      el.onclick = (e) => { e.stopPropagation(); move(el.dataset.mgdn, 1); };
+    });
+    sheet.querySelectorAll('.mg-row').forEach((el) => {
+      attachLongPress(el, () => {
+        const on = el.classList.contains('sorting');
+        sheet.querySelectorAll('.mg-row.sorting').forEach((x) => x.classList.remove('sorting'));
+        if (!on) el.classList.add('sorting');
+        buzz(15); sfx('tap');
+      });
+    });
+  };
+  draw();
 }
 
 function addLedger() {
@@ -2384,7 +2446,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v75 · 2026-11-27';
+const APP_VER = 'v77 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
