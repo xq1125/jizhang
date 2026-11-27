@@ -2442,7 +2442,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v78 · 2026-11-27';
+const APP_VER = 'v79 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {

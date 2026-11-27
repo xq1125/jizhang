@@ -33,7 +33,14 @@
     for (const x of a || []) m.set(x.id, x);
     for (const x of b || []) {
       const cur = m.get(x.id);
-      if (!cur || x.updatedAt > cur.updatedAt) m.set(x.id, x);
+      if (!cur) { m.set(x.id, x); continue; }
+      // createdAt 是不可变元数据：胜方缺失时从负方继承，防止同步覆盖丢失
+      if (x.updatedAt > cur.updatedAt) {
+        if (!x.createdAt && cur.createdAt) x.createdAt = cur.createdAt;
+        m.set(x.id, x);
+      } else if (!cur.createdAt && x.createdAt) {
+        cur.createdAt = x.createdAt;
+      }
     }
     return Array.from(m.values());
   }
