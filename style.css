@@ -177,6 +177,7 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   transition: all .15s ease;
 }
 .lchip.on { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 600; }
+.lchip.del-armed { background: var(--expense); color: #fff; border-color: var(--expense); font-weight: 600; }
 .lchip-add { border-style: dashed; color: var(--faint); background: transparent; }
 .lchip-add:active { border-color: var(--ink); color: var(--ink); }
 

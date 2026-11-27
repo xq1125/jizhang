@@ -432,12 +432,18 @@ function deleteGroup(id) {
   toast('已删除分类');
 }
 
+function groupKeyFor(lid) {
+  if (lid === VIRTUAL_TRAVELS) return 'travel';
+  if (lid === VIRTUAL_OFFLINE) return 'offline';
+  if (lid === VIRTUAL_OTHERS) return 'others';
+  return lid;
+}
 function addLedgerToGroup(group) {
   const name = prompt('新账本名称（如：国庆旅行、装修）：');
   if (!name || !name.trim()) return;
   const icon = (prompt('选一个图标（表情，可留空）：', '🗂️') || '🗂️').trim() || '🗂️';
   const L = { id: genId(), name: name.trim().slice(0, 12), icon: icon.slice(0, 8),
-    updatedAt: Date.now(), createdAt: Date.now(), deleted: false, group };
+    updatedAt: Date.now(), createdAt: Date.now(), deleted: false, group: groupKeyFor(group) };
   const who = prompt('和谁一起？（可留空）', '');
   if (who && who.trim()) L.who = who.trim().slice(0, 20);
   state.allLedgers.push(L);
@@ -750,11 +756,65 @@ function renderLedgers() {
   }
   chips += `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">🎮 游戏</button>`;
   chips += `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新分类</button>`;
+  chips += `<button class="lchip lchip-add" id="btn-manage-groups">⚙️ 管理</button>`;
   el.innerHTML = chips;
   el.querySelectorAll('[data-ledger]').forEach((b) => {
-    b.onclick = () => { sfx('tap'); buzz(8); navLedger(b.dataset.ledger); };
+    b.onclick = () => {
+      if (b.classList.contains('del-armed')) { disarmChip(b); return; }
+      sfx('tap'); buzz(8); navLedger(b.dataset.ledger);
+    };
+    const lid = b.dataset.ledger;
+    const deletable = lid !== 'main' && lid !== VIRTUAL_GAMES && lid !== VIRTUAL_TRAVELS
+      && lid !== VIRTUAL_OFFLINE && lid !== VIRTUAL_OTHERS;
+    if (deletable) {
+      attachLongPress(b, () => {
+        if (b.classList.contains('del-armed')) {
+          disarmChip(b);
+          if (lid.startsWith('grp-')) deleteGroup(lid); else deleteLedger(lid);
+          return;
+        }
+        el.querySelectorAll('.lchip.del-armed').forEach(disarmChip);
+        b.dataset.orig = b.textContent;
+        b.classList.add('del-armed');
+        b.textContent = '✕ 删除';
+        buzz(15);
+        sfx('tap');
+      });
+    }
   });
   el.querySelector('#btn-add-ledger').onclick = addNewGroup;
+  el.querySelector('#btn-manage-groups').onclick = openManageGroups;
+}
+function disarmChip(b) {
+  if (b.dataset.orig) b.textContent = b.dataset.orig;
+  b.classList.remove('del-armed');
+}
+function openManageGroups() {
+  const gs = customGroups();
+  if (!gs.length) { toast('还没有自定义分类，点"＋ 新分类"创建'); return; }
+  const opts = gs.map((G) => ({ id: G.id, label: G.icon + ' ' + G.name }));
+  openSheet('管理分类 · 选一个', opts, '', (id) => {
+    const G = state.allLedgers.find((x) => x.id === id && !x.deleted);
+    if (!G) return;
+    openSheet(G.name, [
+      { id: 'rename', label: '✏️ 改名 / 换图标' },
+      { id: 'del', label: '🗑 删除分类' },
+    ], '', (act) => {
+      if (act === 'rename') {
+        const name = prompt('分类名称：', G.name);
+        if (name !== null && name.trim()) G.name = name.trim().slice(0, 10);
+        const icon = prompt('图标（表情）：', G.icon);
+        if (icon !== null && icon.trim()) G.icon = icon.trim().slice(0, 8);
+        G.updatedAt = Date.now();
+        persist();
+        reload();
+        scheduleSync();
+        toast('已更新分类');
+      } else if (act === 'del') {
+        deleteGroup(id);
+      }
+    });
+  });
 }
 
 function addLedger() {
@@ -2277,7 +2337,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v72 · 2026-11-27';
+const APP_VER = 'v73 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
