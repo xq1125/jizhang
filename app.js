@@ -351,11 +351,10 @@ function renderHeader() {
   $('#next-month').style.display = cal ? '' : 'none';
   $('#this-month').style.display = cal ? '' : 'none';
   const grpH = asGroup(state.ledgerId);
+  const builtinH = BUILTIN_GROUPS.some((b) => b.id === state.ledgerId);
   $('.hero-k').textContent = main ? '本月支出'
-    : (virtual ? '游戏总支出' : (grpH ? grpH.name + '总支出'
-      : (state.ledgerId === VIRTUAL_TRAVELS ? '旅游总支出'
-        : (state.ledgerId === VIRTUAL_OFFLINE ? '线下总支出'
-          : (state.ledgerId === VIRTUAL_OTHERS ? '其他总支出' : '总支出')))));
+    : (grpH ? grpH.name + '总支出'
+      : (builtinH ? groupMeta(state.ledgerId).name + '总支出' : '总支出'));
   const s = state.stats;
   setNum($('#sum-expense'), s.expense);
   setNum($('#sum-income'), s.income);
@@ -381,6 +380,28 @@ function renderHeader() {
 }
 
 /* ---------------- 自定义分类（账本式/账条式） ---------------- */
+const BUILTIN_GROUPS = [
+  { id: VIRTUAL_TRAVELS, name: '旅游', icon: '🧳' },
+  { id: VIRTUAL_OFFLINE, name: '线下', icon: '🌟' },
+  { id: VIRTUAL_OTHERS, name: '其他', icon: '📁' },
+  { id: VIRTUAL_GAMES, name: '游戏', icon: '🎮' },
+];
+function groupMeta(vid) {
+  const m = state.allLedgers.find((x) => x.id === vid && !x.deleted);
+  if (m) return { name: m.name, icon: m.icon };
+  return BUILTIN_GROUPS.find((b) => b.id === vid) || { name: vid, icon: '🗂️' };
+}
+function ensureBuiltinMeta() {
+  let dirty = false;
+  for (const b of BUILTIN_GROUPS) {
+    if (!state.allLedgers.some((x) => x.id === b.id)) {
+      state.allLedgers.push({ id: b.id, name: b.name, icon: b.icon, builtin: true,
+        updatedAt: Date.now(), createdAt: Date.now(), deleted: false });
+      dirty = true;
+    }
+  }
+  if (dirty) persist();
+}
 function customGroups() {
   return state.allLedgers.filter((L) => !L.deleted && L.id.startsWith('grp-'));
 }
@@ -530,9 +551,10 @@ function virtualIds(L) {
 function groupTitle(lid) {
   const G = asGroup(lid);
   if (G) return G.kind === 'cat' ? `${G.name}账条 · 主账本该分类的全部支出` : `${G.name}账本 · 点进去看细账`;
-  return lid === VIRTUAL_TRAVELS ? '旅游账本 · 点目的地看细账'
-    : lid === VIRTUAL_OFFLINE ? '线下活动账本 · 点活动看细账'
-    : '其他账本 · 点进去看细账';
+  const nm = groupMeta(lid).name;
+  return lid === VIRTUAL_TRAVELS ? `${nm}账本 · 点目的地看细账`
+    : lid === VIRTUAL_OFFLINE ? `${nm}活动账本 · 点活动看细账`
+    : `${nm}账本 · 点进去看细账`;
 }
 function groupsOf(lid) {
   const G = asGroup(lid);
@@ -756,19 +778,20 @@ function renderLedgers() {
   if (!el) return;
   const cur = state.ledgers.find((L) => L.id === state.ledgerId);
   const inGroup = cur ? virtualIds(cur) : null;
-  const plain = state.ledgers.filter((L) => (L.id === 'main' || (!isTravel(L) && !isOffline(L) && !isOthers(L))) && !L.id.startsWith('grp-'));
+  const plain = state.ledgers.filter((L) => (L.id === 'main' || (!isTravel(L) && !isOffline(L) && !isOthers(L))) && !L.id.startsWith('grp-') && !L.builtin);
   let chips = plain.map((L) => `
     <button class="lchip ${L.id === state.ledgerId ? 'on' : ''}" data-ledger="${esc(L.id)}">${esc(L.icon)} ${esc(L.name)}</button>`).join('');
   const groupChip = (vid, label) => `<button class="lchip ${(state.ledgerId === vid || inGroup === vid) ? 'on' : ''}" data-ledger="${vid}">${label}</button>`;
   const curChip = inGroup ? `<button class="lchip on" data-ledger="${esc(cur.id)}">${esc(cur.icon)} ${esc(cur.name)}</button>` : '';
-  chips += groupChip(VIRTUAL_TRAVELS, '🧳 旅游') + (inGroup === VIRTUAL_TRAVELS ? curChip : '');
-  chips += groupChip(VIRTUAL_OFFLINE, '🌟 线下') + (inGroup === VIRTUAL_OFFLINE ? curChip : '');
-  chips += groupChip(VIRTUAL_OTHERS, '📁 其他') + (inGroup === VIRTUAL_OTHERS ? curChip : '');
+  const gmT = groupMeta(VIRTUAL_TRAVELS); const gmO = groupMeta(VIRTUAL_OFFLINE); const gmE = groupMeta(VIRTUAL_OTHERS); const gmG = groupMeta(VIRTUAL_GAMES);
+  chips += groupChip(VIRTUAL_TRAVELS, `${esc(gmT.icon)} ${esc(gmT.name)}`) + (inGroup === VIRTUAL_TRAVELS ? curChip : '');
+  chips += groupChip(VIRTUAL_OFFLINE, `${esc(gmO.icon)} ${esc(gmO.name)}`) + (inGroup === VIRTUAL_OFFLINE ? curChip : '');
+  chips += groupChip(VIRTUAL_OTHERS, `${esc(gmE.icon)} ${esc(gmE.name)}`) + (inGroup === VIRTUAL_OTHERS ? curChip : '');
   for (const G of customGroups()) {
     chips += `<button class="lchip ${(state.ledgerId === G.id || inGroup === G.id) ? 'on' : ''}" data-ledger="${esc(G.id)}">${esc(G.icon)} ${esc(G.name)}</button>`;
     if (inGroup === G.id) chips += curChip;
   }
-  chips += `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">🎮 游戏</button>`;
+  chips += `<button class="lchip ${state.ledgerId === VIRTUAL_GAMES ? 'on' : ''}" data-ledger="${VIRTUAL_GAMES}">${esc(gmG.icon)} ${esc(gmG.name)}</button>`;
   chips += `<button class="lchip lchip-add" id="btn-add-ledger">＋ 新分类</button>`;
   chips += `<button class="lchip lchip-add" id="btn-manage-groups">⚙️ 管理</button>`;
   el.innerHTML = chips;
@@ -804,22 +827,23 @@ function disarmChip(b) {
   b.classList.remove('del-armed');
 }
 function openManageGroups() {
-  const gs = customGroups();
-  if (!gs.length) { toast('还没有自定义分类，点"＋ 新分类"创建'); return; }
-  const opts = gs.map((G) => ({ id: G.id, label: G.icon + ' ' + G.name }));
-  openSheet('管理分类 · 选一个', opts, '', (id) => {
-    const G = state.allLedgers.find((x) => x.id === id && !x.deleted);
-    if (!G) return;
-    openSheet(G.name, [
-      { id: 'rename', label: '✏️ 改名 / 换图标' },
-      { id: 'del', label: '🗑 删除分类' },
-    ], '', (act) => {
+  const items = BUILTIN_GROUPS.map((b) => {
+    const m = groupMeta(b.id);
+    return { id: b.id, label: `${m.icon} ${m.name}（内置）` };
+  }).concat(customGroups().map((G) => ({ id: G.id, label: G.icon + ' ' + G.name })));
+  openSheet('管理分类 · 选一个', items, '', (id) => {
+    const builtin = BUILTIN_GROUPS.some((b) => b.id === id);
+    const acts = [{ id: 'rename', label: '✏️ 改名 / 换图标' }];
+    if (!builtin) acts.push({ id: 'del', label: '🗑 删除分类' });
+    openSheet(groupMeta(id).name, acts, '', (act) => {
+      const L = state.allLedgers.find((x) => x.id === id && !x.deleted);
+      if (!L) return;
       if (act === 'rename') {
-        const name = prompt('分类名称：', G.name);
-        if (name !== null && name.trim()) G.name = name.trim().slice(0, 10);
-        const icon = prompt('图标（表情）：', G.icon);
-        if (icon !== null && icon.trim()) G.icon = icon.trim().slice(0, 8);
-        G.updatedAt = Date.now();
+        const name = prompt('分类名称：', L.name);
+        if (name !== null && name.trim()) L.name = name.trim().slice(0, 10);
+        const icon = prompt('图标（表情）：', L.icon);
+        if (icon !== null && icon.trim()) L.icon = icon.trim().slice(0, 8);
+        L.updatedAt = Date.now();
         persist();
         reload();
         scheduleSync();
@@ -878,6 +902,7 @@ function renameLedger(id) {
 function deleteLedger(id) {
   const L = state.allLedgers.find((x) => x.id === id && !x.deleted);
   if (!L || id === 'main') return;
+  if (L.builtin) { toast('内置分组不能删除，可在"⚙️ 管理"里改名', true); return; }
   const n = state.allRecords.filter((r) => !r.deleted && (r.ledgerId || 'main') === id).length;
   if (!confirm(`删除账本「${L.name}」？其中 ${n} 条记录也会一并删除。`)) return;
   L.deleted = true;
@@ -1432,7 +1457,7 @@ function renderForm(view) {
   const fl = view.querySelector('#f-link');
   if (fl) fl.onclick = () => {
     const opts = [{ id: '', label: '不关联' }].concat(
-      state.ledgers.filter((L) => L.id !== 'main' && !L.id.startsWith('grp-'))
+      state.ledgers.filter((L) => L.id !== 'main' && !L.id.startsWith('grp-') && !L.builtin)
         .map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
     openSheet('关联到哪个小账本', opts, f.link || '', (id) => {
       f.link = id;
@@ -1907,7 +1932,7 @@ function renderList() {
     view.querySelector('#mb-date').oninput = (e) => { moveState.date = e.target.value; };
     view.querySelector('#mb-ledger').onclick = () => {
       const opts = [{ id: '', label: '账本不变' }].concat(
-        state.ledgers.filter((L) => !L.id.startsWith('grp-')).map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
+        state.ledgers.filter((L) => !L.id.startsWith('grp-') && !L.builtin).map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
       openSheet('移动到哪个账本', opts, moveState.ledger, (id) => {
         moveState.ledger = id;
         const cur = id ? state.ledgers.find((L) => L.id === id) : null;
@@ -2359,13 +2384,13 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v74 · 2026-11-27';
+const APP_VER = 'v75 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
   const view = $('#view');
   const lastSync = settings.lastSync ? new Date(settings.lastSync).toLocaleString('zh-CN') : '从未';
-  const ledgerRows = state.ledgers.filter((L) => !L.id.startsWith('grp-')).map((L) => {
+  const ledgerRows = state.ledgers.filter((L) => !L.id.startsWith('grp-') && !L.builtin).map((L) => {
     const n = recordsOfLedger(L).length;
     return `<div class="mrow">
       <span class="mico">${esc(L.icon)}</span>
@@ -2479,7 +2504,7 @@ function renderSettings() {
   const upd = (id, txt) => { view.querySelector(id).textContent = txt + ' ▾'; };
   view.querySelector('#exp-ledger').onclick = () => {
     const opts = [{ id: 'all', label: '全部账本' }].concat(
-      state.ledgers.filter((L) => !L.id.startsWith('grp-')).map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
+      state.ledgers.filter((L) => !L.id.startsWith('grp-') && !L.builtin).map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
     openSheet('导出哪个账本', opts, exportState.ledger, (id) => { exportState.ledger = id; upd('#exp-ledger', expLedgerLabel()); });
   };
   view.querySelector('#exp-from').onclick = () => {
@@ -2685,6 +2710,7 @@ window.addEventListener('appinstalled', () => {
       dirty = true;
     }
     if (dirty) persist();
+    ensureBuiltinMeta();
     clearMirrors();
     reload();
     try { history.replaceState({ lid: state.ledgerId, gs: null }, ''); } catch (e) { /* ignore */ }
