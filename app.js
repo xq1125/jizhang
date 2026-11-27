@@ -1037,6 +1037,95 @@ function setupBackHandling() {
   });
 }
 
+/* ---------------- 拍照识别记一笔 ---------------- */
+const _loadedScripts = {};
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (_loadedScripts[src]) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => { _loadedScripts[src] = 1; resolve(); };
+    s.onerror = () => reject(new Error('脚本加载失败'));
+    document.head.appendChild(s);
+  });
+}
+function photoCapture() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*';
+  inp.onchange = () => {
+    const file = inp.files && inp.files[0];
+    if (file) recognizeImage(file);
+  };
+  inp.click();
+}
+async function recognizeImage(file) {
+  toast('📷 正在加载识别引擎（首次稍慢，之后走缓存）…');
+  let worker = null;
+  try {
+    await loadScriptOnce('vendor/tesseract.min.js');
+    worker = await Tesseract.createWorker(['chi_sim', 'eng'], 1, {
+      workerPath: 'vendor/tesseract.min.js',
+      corePath: 'vendor/',
+      langPath: 'vendor/lang',
+    });
+    toast('📷 识别中…');
+    const { data } = await worker.recognize(file);
+    showRecognizeResult((data && data.text) || '');
+  } catch (e) {
+    toast('识别组件加载失败（需联网），可把截图发给我代录', true);
+    sfx('error');
+  } finally {
+    if (worker) { try { await worker.terminate(); } catch (e) { /* ignore */ } }
+  }
+}
+function showRecognizeResult(text) {
+  const clean = String(text || '').replace(/\r/g, '');
+  const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
+  const cands = [];
+  const seen = new Set();
+  const re = /(?:[¥￥]\s*(\d+(?:[.,]\d{1,2})?)|实付[:：]?\s*(\d+(?:[.,]\d{1,2})?)|金额[:：]?\s*(\d+(?:[.,]\d{1,2})?)|合计[:：]?\s*(\d+(?:[.,]\d{1,2})?))/g;
+  let m;
+  while ((m = re.exec(clean))) {
+    let amt = (m[1] || m[2] || m[3] || m[4] || '').replace(/,/g, '.');
+    if (!amt || !/^\d+(\.\d{1,2})?$/.test(amt) || Number(amt) <= 0) continue;
+    const pos = clean.slice(0, m.index).split('\n').length - 1;
+    let label = '';
+    for (let i = pos; i >= Math.max(0, pos - 3) && !label; i--) {
+      const l = (lines[i] || '').replace(/[¥￥\d.,]+\s*$/, '').trim();
+      if (l && l.length >= 2 && !/^[x×*]\d+$/.test(l)) label = l.slice(0, 20);
+    }
+    const key = amt + '|' + label;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cands.push({ amt, label });
+  }
+  if (!cands.length) {
+    const opts = lines.slice(0, 12).map((l, i) => ({ id: 'line' + i, label: l.slice(0, 24) }));
+    openSheet('没识别到金额，这是识别出的文字（可选一条手动记）', opts.concat([{ id: '__manual', label: '✏️ 手动填写' }]), '', (id) => {
+      openForm(null);
+      if (id !== '__manual') {
+        const idx = Number(id.replace('line', ''));
+        state.form.note = (lines[idx] || '').slice(0, 30);
+      }
+      render();
+    });
+    return;
+  }
+  const opts = cands.map((c) => ({ id: c.amt, label: `¥${c.amt}${c.label ? '　' + c.label : ''}` }));
+  opts.push({ id: '__manual', label: '✏️ 手动填写' });
+  openSheet(`识别到 ${cands.length} 个金额，点一条去记账`, opts, '', (id) => {
+    openForm(null);
+    if (id !== '__manual') {
+      state.form.amount = id;
+      const c = cands.find((x) => x.amt === id);
+      if (c && c.label) state.form.note = c.label;
+    }
+    render();
+    sfx('tap');
+  });
+}
+
 /* ---------------- 记一笔 ---------------- */
 const EXPAND_LIMIT = 10;
 let catsExpanded = false;
@@ -1101,6 +1190,7 @@ function renderAdd() {
   for (const r of dayRecs) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
   const rows = dayRowsHtml(dayRecs, false);
   view.innerHTML = `
+    <div class="list-tools"><button class="mini" id="btn-photo">📷 拍照记</button><span class="lt-hint">订单截图/小票，识别金额一键入账</span></div>
     <div class="card cal-card">
       <div class="chart-title">日历总览 · 点某天看当天、记账（左右滑换月）</div>
       ${calendarHtml(state.selDate)}
@@ -1144,6 +1234,7 @@ function renderAdd() {
     }, { passive: true });
   }
   view.querySelector('#btn-day-add').onclick = () => openForm(null);
+  view.querySelector('#btn-photo').onclick = photoCapture;
   view.querySelectorAll('.rrow').forEach((el) => {
     if (el.dataset.tripjump) return;
     el.onclick = () => {
@@ -2165,7 +2256,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v70 · 2026-11-27';
+const APP_VER = 'v71 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
