@@ -16,9 +16,9 @@ function monthLabel(m) {
   const [y, mo] = m.split('-');
   return `${y}年${Number(mo)}月`;
 }
-function dayLabel(dateStr) {
+function dayLabel(dateStr, withYear) {
   const d = new Date(dateStr + 'T00:00:00');
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEK[d.getDay()]}`;
+  return `${withYear ? d.getFullYear() + '年' : ''}${d.getMonth() + 1}月${d.getDate()}日 ${WEEK[d.getDay()]}`;
 }
 function fmt(cents) {
   return (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1676,7 +1676,7 @@ function renderList() {
     let exp = 0, inc = 0;
     for (const r of list) (r.type === 'expense' ? (exp += r.amount) : (inc += r.amount));
     html += `<div class="day-group">
-      <div class="day-head${ms ? ' dayhead-act' : ''}" data-dayall="${esc(date)}"><span>${dayLabel(date)}</span>
+      <div class="day-head${ms ? ' dayhead-act' : ''}" data-dayall="${esc(date)}"><span>${dayLabel(date, state.ledgerId === VIRTUAL_GAMES && state.gameSel)}</span>
         <span class="day-total">支出 ¥${fmt(exp)}${inc > 0 ? ` · 收入 ¥${fmt(inc)}` : ''}</span></div>`;
     html += dayRowsHtml(list, ms);
     html += '</div>';
@@ -2165,7 +2165,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v68 · 2026-11-27';
+const APP_VER = 'v69 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
