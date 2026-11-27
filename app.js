@@ -857,11 +857,11 @@ function findLedgerLink(r) {
     const L = state.allLedgers.find((x) => x.id === r.mirror.ledgerId && !x.deleted);
     if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
   }
-  if (r.tripId) {
+  if (r.tripId && r.tripId !== state.ledgerId) {
     const L = state.allLedgers.find((x) => x.id === r.tripId && !x.deleted);
     if (L) return { lid: L.id, date: r.date, label: '🔗 ' + L.name };
   }
-  if (r.linkLid) {
+  if (r.linkLid && r.linkLid !== state.ledgerId) {
     const L = state.allLedgers.find((x) => x.id === r.linkLid && !x.deleted);
     if (L) return { lid: L.id, date: r.date, label: '🔗 ' + L.name };
   }
@@ -2165,7 +2165,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v69 · 2026-11-27';
+const APP_VER = 'v70 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
