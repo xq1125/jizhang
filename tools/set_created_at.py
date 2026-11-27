@@ -39,7 +39,8 @@ for L in data["ledgers"]:
                  if not r.get("deleted") and r.get("tripId") == L["id"]]
     else:
         dates = [r["date"] for r in data["records"]
-                 if not r.get("deleted") and not r.get("mirror") and (r.get("ledgerId") or "main") == L["id"]]
+                 if not r.get("deleted") and not r.get("mirror")
+                 and ((r.get("ledgerId") or "main") == L["id"] or r.get("tripId") == L["id"])]
     if dates:
         d = min(dates)
         L["createdAt"] = int(datetime.strptime(d, "%Y-%m-%d").timestamp() * 1000)
