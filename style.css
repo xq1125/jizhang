@@ -285,6 +285,9 @@ main { flex: 1; padding: 12px 18px calc(var(--tabbar-h) + 22px + env(safe-area-i
   margin-top: 10px; border: none; background: var(--chip); color: var(--sub);
   font-size: 14.5px; padding: 12px; border-radius: 12px; cursor: pointer;
 }
+.cat-ico { font-size: 18px; margin-right: 2px; }
+.cat-cnt { font-style: normal; font-size: 11px; color: var(--faint); margin-left: 6px; }
+.cat-ops { display: flex; gap: 6px; flex: none; }
 
 /* ---------- 弹层触发按钮 ---------- */
 .mb-btn {

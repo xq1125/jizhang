@@ -1091,7 +1091,7 @@ function renderForm(view) {
             <span class="cico">${catsExpanded ? '∧' : '∨'}</span><span class="cname">${catsExpanded ? '收起' : '展开 ' + (cats.length - EXPAND_LIMIT) + '个'}</span>
           </button>` : ''}
         <button class="cat add-cat" data-addcat="1">
-          <span class="cico">＋</span><span class="cname">新分类</span>
+          <span class="cico">⚙️</span><span class="cname">管理分类</span>
         </button>
       </div>
       <div class="frow"><span class="fk">日期</span><input type="date" id="f-date" value="${esc(f.date)}"></div>
@@ -1116,7 +1116,7 @@ function renderForm(view) {
   });
   const more = view.querySelector('#cat-more');
   if (more) more.onclick = () => { catsExpanded = !catsExpanded; render(); };
-  view.querySelector('[data-addcat]').onclick = addCategory;
+  view.querySelector('[data-addcat]').onclick = () => openCatSheet(state.form.type);
   view.querySelector('#amount').oninput = (e) => {
     f.amount = e.target.value;
     sfx('key');
@@ -1144,6 +1144,109 @@ function renderForm(view) {
 function resetForm(keepType = true) {
   const type = keepType ? state.form.type : 'expense';
   state.form = { type, categoryId: null, amount: '', note: '', date: todayStr(), editingId: null };
+}
+
+/* ---------------- 分类管理 ---------------- */
+const CAT_ICONS = ['🍜', '🚌', '🛍️', '🏠', '🎮', '💊', '📚', '🎁', '📱', '📦', '✈️', '🎬',
+  '☕', '🚗', '💄', '🐾', '⚽', '🎵', '🍎', '💡', '🧾', '🏥', '🎓', '💰'];
+function pickIcon(current, cb) {
+  const opts = CAT_ICONS.map((e) => ({ id: e, label: e })).concat([{ id: '__custom', label: '✏️ 自定义符号' }]);
+  openSheet('选图标', opts, current, (id) => {
+    if (id === '__custom') {
+      const g = prompt('输入一个表情或符号：');
+      if (g && g.trim()) cb(g.trim().slice(0, 8));
+    } else {
+      cb(id);
+    }
+  });
+}
+
+function openCatSheet(type) {
+  const mask = document.createElement('div');
+  mask.className = 'sheet-mask';
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  mask.appendChild(sheet);
+  document.body.appendChild(mask);
+  requestAnimationFrame(() => mask.classList.add('show'));
+  const close = () => {
+    mask.classList.remove('show');
+    setTimeout(() => mask.remove(), 200);
+  };
+  mask.onclick = (e) => { if (e.target === mask) close(); };
+  const draw = () => {
+    const cats = state.allCategories.filter((c) => !c.deleted && c.type === type);
+    let html = `<div class="sheet-title">${type === 'expense' ? '支出' : '收入'}分类管理</div><div class="sheet-list">`;
+    for (const c of cats) {
+      const n = state.allRecords.filter((r) => !r.deleted && r.catId === c.id).length;
+      html += `<div class="sheet-item">
+        <span class="si-label"><span class="cat-ico">${esc(c.icon)}</span> ${esc(c.name)} <em class="cat-cnt">${n} 条</em></span>
+        <span class="cat-ops"><button class="mini" data-cedit="${esc(c.id)}">✏️</button><button class="mini danger" data-cdel="${esc(c.id)}">🗑</button></span></div>`;
+    }
+    html += `</div><div class="sheet-foot"><button class="mini" id="cat-add">＋ 添加分类</button><button class="sheet-ok" id="cat-done">完成</button></div>`;
+    sheet.innerHTML = html;
+    sheet.querySelectorAll('[data-cedit]').forEach((b) => {
+      b.onclick = (e) => { e.stopPropagation(); editCategory(b.dataset.cedit, draw); };
+    });
+    sheet.querySelectorAll('[data-cdel]').forEach((b) => {
+      b.onclick = (e) => { e.stopPropagation(); deleteCategory(b.dataset.cdel, draw); };
+    });
+    sheet.querySelector('#cat-add').onclick = () => addCategoryType(type, draw);
+    sheet.querySelector('#cat-done').onclick = close;
+  };
+  draw();
+}
+
+function editCategory(id, redraw) {
+  const c = state.allCategories.find((x) => x.id === id && !x.deleted);
+  if (!c) return;
+  const name = prompt('分类名称：', c.name);
+  if (name === null) return;
+  if (name.trim()) c.name = name.trim().slice(0, 20);
+  pickIcon(c.icon, (icon) => {
+    c.icon = icon;
+    c.updatedAt = Date.now();
+    persist();
+    reload();
+    scheduleSync();
+    if (redraw) redraw();
+    sfx('tap');
+    toast(`已更新「${c.name}」`);
+  });
+}
+
+function deleteCategory(id, redraw) {
+  const c = state.allCategories.find((x) => x.id === id && !x.deleted);
+  if (!c) return;
+  const n = state.allRecords.filter((r) => !r.deleted && r.catId === id).length;
+  if (n) {
+    toast(`「${c.name}」还有 ${n} 条记录在用，不能删（可改名/换图标）`, true);
+    sfx('error');
+    return;
+  }
+  if (!confirm(`删除分类「${c.name}」？`)) return;
+  c.deleted = true;
+  c.updatedAt = Date.now();
+  persist();
+  reload();
+  scheduleSync();
+  if (redraw) redraw();
+  toast('已删除分类');
+}
+
+function addCategoryType(type, redraw) {
+  const name = prompt(`新的${type === 'expense' ? '支出' : '收入'}分类名称：`);
+  if (!name || !name.trim()) return;
+  pickIcon('📦', (icon) => {
+    const cat = { id: genId(), name: name.trim().slice(0, 20), type, icon, updatedAt: Date.now(), deleted: false };
+    state.allCategories.push(cat);
+    if (!persist()) return;
+    if (state.form && !state.form.categoryId) state.form.categoryId = cat.id;
+    reload();
+    scheduleSync();
+    if (redraw) redraw();
+    toast(`已添加分类「${cat.name}」`);
+  });
 }
 
 function addCategory() {
@@ -1924,7 +2027,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v62 · 2026-11-26';
+const APP_VER = 'v63 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
