@@ -38,7 +38,7 @@ for r in recs:
         sub_day[(lid, r["date"])][0] += r["amount"]
         sub_day[(lid, r["date"])][1] += 1
 
-# 复刻 findLedgerLink：合计优先，再同额（tripId 直接算已连）
+# 复刻 findLedgerLink：标签/手动优先，再合计，再同额
 totals = {}
 amts = defaultdict(set)
 for (lid, d), (c, n) in sub_day.items():
@@ -49,6 +49,7 @@ for r in recs:
     if lid != "main" and r["type"] == "expense":
         amts[(lid, r["date"])].add(r["amount"])
 
+# 标签/手动链接先算上
 linked = defaultdict(int)   # (lid,date) -> 主账本已连金额
 linked_n = defaultdict(int)
 for d, mlist in main_day.items():
@@ -56,6 +57,10 @@ for d, mlist in main_day.items():
         if m.get("tripId"):
             linked[(m["tripId"], d)] += m["amount"]
             linked_n[(m["tripId"], d)] += 1
+            continue
+        if m.get("linkLid"):
+            linked[(m["linkLid"], d)] += m["amount"]
+            linked_n[(m["linkLid"], d)] += 1
             continue
         hit = None
         for (lid, dd), t in totals.items():
