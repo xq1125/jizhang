@@ -1267,17 +1267,18 @@ function openForm(rec) {
     state.form = {
       type: rec.type, categoryId: rec.catId, amount: String(rec.amount / 100),
       note: rec.note || '', date: rec.date, editingId: rec.id, game: '',
+      link: rec.tripId || '', linkable: (rec.ledgerId || 'main') === 'main',
     };
   } else if (state.ledgerId === VIRTUAL_GAMES) {
     state.form = {
       type: 'expense', categoryId: GAME_CAT_ID, amount: '', note: '', date: todayStr(), editingId: null,
-      game: state.gameSel && state.gameSel !== '未标注' ? state.gameSel : '',
+      game: state.gameSel && state.gameSel !== '未标注' ? state.gameSel : '', link: '', linkable: false,
     };
   } else if (state.ledgerId.startsWith('grp-')) {
     const G = asGroup(state.ledgerId);
-    state.form = { type: 'expense', categoryId: G && G.kind === 'cat' ? G.catId : null, amount: '', note: '', date: todayStr(), editingId: null, game: '' };
+    state.form = { type: 'expense', categoryId: G && G.kind === 'cat' ? G.catId : null, amount: '', note: '', date: todayStr(), editingId: null, game: '', link: '', linkable: false };
   } else {
-    state.form = { type: 'expense', categoryId: null, amount: '', note: '', date: state.selDate, editingId: null, game: '' };
+    state.form = { type: 'expense', categoryId: null, amount: '', note: '', date: state.selDate, editingId: null, game: '', link: '', linkable: state.ledgerId === 'main' };
   }
   render();
 }
@@ -1320,6 +1321,8 @@ function renderForm(view) {
       </div>
       <div class="frow"><span class="fk">日期</span><input type="date" id="f-date" value="${esc(f.date)}"></div>
       <div class="frow"><span class="fk">备注</span><input id="f-note" maxlength="60" placeholder="选填" value="${esc(f.note)}"></div>
+      ${f.linkable ? `
+      <div class="frow"><span class="fk">关联</span><button class="exp-btn" id="f-link">${esc(f.link ? ((state.ledgers.find((x) => x.id === f.link) || {}).icon || '') + ' ' + ((state.ledgers.find((x) => x.id === f.link) || {}).name || '') : '不关联')} ▾</button></div>` : ''}
       ${editing ? `
         <div class="edit-actions">
           <button class="btn-ghost btn-danger" id="btn-del">删除</button>
@@ -1348,6 +1351,18 @@ function renderForm(view) {
   };
   view.querySelector('#f-date').onchange = (e) => { f.date = e.target.value; };
   view.querySelector('#f-note').oninput = (e) => { f.note = e.target.value; };
+  const fl = view.querySelector('#f-link');
+  if (fl) fl.onclick = () => {
+    const opts = [{ id: '', label: '不关联' }].concat(
+      state.ledgers.filter((L) => L.id !== 'main' && !L.id.startsWith('grp-'))
+        .map((L) => ({ id: L.id, label: L.icon + ' ' + L.name })));
+    openSheet('关联到哪个小账本', opts, f.link || '', (id) => {
+      f.link = id;
+      const L = id ? state.ledgers.find((x) => x.id === id) : null;
+      fl.textContent = (L ? L.icon + ' ' + L.name : '不关联') + ' ▾';
+      sfx('tap');
+    });
+  };
   view.querySelector('#btn-save').onclick = saveRecord;
   const fg = view.querySelector('#f-game');
   if (fg) fg.onclick = () => {
@@ -1503,6 +1518,7 @@ function formPayload() {
 }
 
 function saveRecord() {
+  const f = state.form;
   const data = formPayload();
   if (!data) return;
   const now = Date.now();
@@ -1511,6 +1527,10 @@ function saveRecord() {
   if (wasEdit) {
     const prev = Object.assign({}, state.allRecords.find((r) => r.id === state.form.editingId));
     const rec = Object.assign({}, prev, data, { updatedAt: now });
+    if (rec.linkable !== undefined) delete rec.linkable;
+    if ((rec.ledgerId || 'main') === 'main') {
+      if (f.link) rec.tripId = f.link; else delete rec.tripId;
+    }
     const i = state.allRecords.findIndex((r) => r.id === rec.id);
     if (i >= 0) state.allRecords[i] = rec; else state.allRecords.push(rec);
     undo = () => {
@@ -1525,6 +1545,7 @@ function saveRecord() {
     const curL = state.allLedgers.find((L) => L.id === state.ledgerId && L.id !== 'main');
     const rec = Object.assign({ id: genId(), ledgerId: 'main', deleted: false }, data, { updatedAt: now });
     if (curL && !curL.id.startsWith('grp-')) rec.tripId = curL.id;
+    else if (f.link) rec.tripId = f.link;
     state.allRecords.push(rec);
     undo = () => {
       const cur = state.allRecords.find((r) => r.id === rec.id);
@@ -2256,7 +2277,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v71 · 2026-11-27';
+const APP_VER = 'v72 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
