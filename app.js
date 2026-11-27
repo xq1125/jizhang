@@ -332,15 +332,24 @@ function setNum(el, cents) {
 }
 
 /* ---------------- 顶栏 + 结余卡 ---------------- */
+/* 有日历视图的账本（主账本+真实小账本）才显示月份导航 */
+function hasCalendarView() {
+  const lid = state.ledgerId;
+  if (lid === 'main') return true;
+  if (lid === VIRTUAL_GAMES || lid === VIRTUAL_TRAVELS || lid === VIRTUAL_OFFLINE || lid === VIRTUAL_OTHERS) return false;
+  if (lid.startsWith('grp-')) return false;
+  return !!state.allLedgers.find((L) => L.id === lid && !L.deleted);
+}
+
 function renderHeader() {
   const main = state.ledgerId === 'main';
   const virtual = state.ledgerId === VIRTUAL_GAMES;
-  const travel = state.ledgerId === VIRTUAL_TRAVELS;
-  $('#month-label').textContent = main ? monthLabel(state.month) + ' ▾' : '全部时间';
-  $('#month-label').style.cursor = main ? 'pointer' : 'default';
-  $('#prev-month').style.display = main ? '' : 'none';
-  $('#next-month').style.display = main ? '' : 'none';
-  $('#this-month').style.display = main ? '' : 'none';
+  const cal = hasCalendarView();
+  $('#month-label').textContent = cal ? monthLabel(state.month) + ' ▾' : '全部时间';
+  $('#month-label').style.cursor = cal ? 'pointer' : 'default';
+  $('#prev-month').style.display = cal ? '' : 'none';
+  $('#next-month').style.display = cal ? '' : 'none';
+  $('#this-month').style.display = cal ? '' : 'none';
   const grpH = asGroup(state.ledgerId);
   $('.hero-k').textContent = main ? '本月支出'
     : (virtual ? '游戏总支出' : (grpH ? grpH.name + '总支出'
@@ -2151,7 +2160,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v65 · 2026-11-27';
+const APP_VER = 'v66 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
@@ -2336,7 +2345,7 @@ function render() {
 
 /* 年月双列选择器：点标题"2026年9月 ▾"弹出 */
 function openMonthPicker() {
-  if (state.ledgerId !== 'main') return;
+  if (!hasCalendarView()) return;
   const ms = monthList();
   if (!ms.length) return;
   const minY = Number(ms[0].slice(0, 4));
