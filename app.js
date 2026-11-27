@@ -381,10 +381,10 @@ function renderHeader() {
 
 /* ---------------- 自定义分类（账本式/账条式） ---------------- */
 const BUILTIN_GROUPS = [
-  { id: VIRTUAL_TRAVELS, name: '旅游', icon: '🧳' },
-  { id: VIRTUAL_OFFLINE, name: '线下', icon: '🌟' },
-  { id: VIRTUAL_OTHERS, name: '其他', icon: '📁' },
-  { id: VIRTUAL_GAMES, name: '游戏', icon: '🎮' },
+  { id: 'virtual-travels', name: '旅游', icon: '🧳' },
+  { id: 'virtual-offline', name: '线下', icon: '🌟' },
+  { id: 'virtual-others', name: '其他', icon: '📁' },
+  { id: 'virtual-games', name: '游戏', icon: '🎮' },
 ];
 function groupMeta(vid) {
   const m = state.allLedgers.find((x) => x.id === vid && !x.deleted);
