@@ -54,6 +54,8 @@ linked = defaultdict(int)   # (lid,date) -> 主账本已连金额
 linked_n = defaultdict(int)
 for d, mlist in main_day.items():
     for m in mlist:
+        if m.get("noLink"):
+            continue
         if m.get("tripId"):
             linked[(m["tripId"], d)] += m["amount"]
             linked_n[(m["tripId"], d)] += 1

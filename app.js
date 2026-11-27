@@ -852,6 +852,7 @@ function buildLedgerDayIndex() {
 }
 
 function findLedgerLink(r) {
+  if (r.noLink) return null;
   if (r.mirror && r.mirror.ledgerId) {
     const L = state.allLedgers.find((x) => x.id === r.mirror.ledgerId && !x.deleted);
     if (L) return { lid: L.id, date: r.mirror.date, label: L.icon + ' ' + L.name };
@@ -2164,7 +2165,7 @@ function exportCsv() {
   buzz([15, 30, 25]);
 }
 
-const APP_VER = 'v67 · 2026-11-27';
+const APP_VER = 'v68 · 2026-11-27';
 
 /* ---------------- 设置 ---------------- */
 function renderSettings() {
